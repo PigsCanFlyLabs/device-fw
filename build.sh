@@ -34,6 +34,7 @@ fi
 mkdir -p ./microPython/project
 pushd ./microPython/project
 
+pwd
 if [ ! -d "micropython" ]; then
   git clone --recurse-submodules git@github.com:micropython/micropython.git
 fi
@@ -44,7 +45,7 @@ git checkout
 git checkout "${MICRO_PYTHON_VERSION}"
 
 
-if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross" ]; then
+if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross/mpy-cross" ]; then
   pushd mpy-cross
   make
   cp mpy-cross "${venv_dir}/bin/"
@@ -56,13 +57,17 @@ if [ ! -f "micorpython" ]; then
   make
 fi
 popd
+# Make uasyncio available for testing on unix port
+if [ ! -d "~/.micropython/lib/" ]; then
+  mkdir -p ~/.micropython/lib
+  cp -af ./extmod/* ~/.micropython/lib/
+fi
 pushd ./ports/esp32
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
-make clean
 make submodules
 make BOARD=GENERIC
-#make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw"
+make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
 popd
 
