@@ -24,7 +24,7 @@ class Satelite():
         ready_callback is a callback to indicate the modem can receive msgs
         """
         print("Constructing connection to M138.")
-        if myuart is None:
+        if myconn is None:
             from machine import UART
             self.conn = UART(uart_id)
         else:
@@ -37,13 +37,12 @@ class Satelite():
         self.last_date = None
         self.lock = uasyncio.Lock()
         self.ready = False
-        # Not supported by all micropython
+        print("Initilizing UART.")
+        self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
         print("Seting up satelite msg handler...")
         self.satelite_task = uasyncio.create_task(self.main_loop())
 
     async def main_loop(self):
-        print("Initilizing UART.")
-        self.conn.init(baudrate=115200, tx=tx, rx=rx)
         print("Initialized UART")
         print("Waiting for satelite modem to boot.")
         self._boot_handle()

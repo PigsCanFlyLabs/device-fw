@@ -39,6 +39,7 @@ if [ ! -d "micropython" ]; then
   git clone --recurse-submodules git@github.com:micropython/micropython.git
 fi
 pushd micropython
+MP_ROOT=$(pwd)
 
 git fetch
 git checkout 
@@ -55,14 +56,21 @@ pushd ./ports/unix
 if [ ! -f "micorpython" ]; then
   make submodules
   make
+  export PATH="${PATH}:$(pwd)"
 fi
 popd
 # Make uasyncio available for testing on unix port
 if [ ! -d "~/.micropython/lib/" ]; then
   mkdir -p ~/.micropython/lib
   cp -af ./extmod/* ~/.micropython/lib/
+  micropython -m upip install unittest
 fi
-pushd ./ports/esp32
+# Run some smoke tests
+popd
+pushd fw
+micropython -c "import unittest;unittest.main('smoke_test')"
+popd
+pushd "${MP_ROOT}/ports/esp32"
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
