@@ -12,9 +12,7 @@ class UARTBluetooth():
         else:
             self.ble = ble
         self.stop_advertise()
-        self.ble.config(gap_name=name)
-        self.ble.active(True)
-        self.ble.config(gap_name=name)
+        self.enable()
         self.connected = False
         self.display = display
         self.msg = []
@@ -25,6 +23,16 @@ class UARTBluetooth():
         self.register()
         self.advertise()
 
+    def enable():
+        self.ble.config(gap_name=self.name)
+        self.ble.active(True)
+        self.ble.config(gap_name=self.name)
+
+    def disable():
+        self.ble.config(gap_name=self.name)
+        self.ble.active(False)
+        self.ble.config(gap_name=self.name)
+        
     def ble_irq(self, event: int, data):
         """Handle BlueTooth Event."""
         if self.display is not None:
@@ -68,7 +76,6 @@ class UARTBluetooth():
                 elif self.target_length < 0:
                     # Error
                     e = "ERROR: INVALID MSG LEN"
-                    self.send(len(e))
                     self.send(e)
                     self.target_length = 0
                     self.msg = []
@@ -78,7 +85,11 @@ class UARTBluetooth():
 
     async def _msg_handle(self, completed_msg):
         if self.msg_callback is not None:
-            self.msg_callback(completed_msg)
+            try:
+                id = self.msg_callback(completed_msg)
+                self.send(f"MSGID: {id}")
+            except Exception e:
+                self.send("ERROR: sat modem error {e}")
             self.display.text(str("".join(self.msg)), 0, 40)
             self.display.show()
 
@@ -97,7 +108,7 @@ class UARTBluetooth():
         SERVICES = (BLE_UART, )
         ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
 
-
+        
     def send(self, data: ByteString):
         # Send how many bytes were going to have
         self.ble.gatts_notify(0, self.tx, int.to_bytes(len(data), 'little'))
@@ -107,6 +118,17 @@ class UARTBluetooth():
             self.ble.gatts_notify(0, self.tx, data[idx:idx+self.mtu])
             idx = idx + self.mtu
 
+    def send_msg(self, app_id: str, msg: str):
+        self.send(f"MSG {app_id} {msg}")
+
+    def send_error(self, error):
+        self.send(f"ERROR {error}")
+
+    def send_ready(self):
+        self.send("READY")
+
+    def send_msg_acked(self, msgid: str):
+        self.send(f"ACK {msgid}")
 
     def stop_advertise(self):
         name = bytes(self.name, 'UTF-8')

@@ -11,6 +11,7 @@ class Satelite():
                  txing_pin=None,
                  uart_tx=11,
                  uart_rx=12,
+                 ready_callback=None,
                  myconn=None):
         """Initialize a connection to the satelite modem. Allows setting myconn for testing.
         uart_id is the ID of the uart controller to use
@@ -21,6 +22,7 @@ class Satelite():
         txing_pin is an optional int for a pin to monitor for TXing
         uart_tx is the UART tx pin
         uart_rx is the UART rx pin
+        ready_callback is a callback to indicate the modem can receive msgs
         """
         print("Constructing connection to M138.")
         if myuart is None:
@@ -45,10 +47,19 @@ class Satelite():
         print("Initialized UART")
         print("Waiting for satelite modem to boot.")
         self._boot_handle()
-        print("Modem started!")
-        while (True):
-            line = self.conn.readline()
-            await self._line_handle(line)
+        while True:
+            self.ready_callback()
+            self.read_all_msgs()
+            self.enable_msg_watch()
+            try:
+                while True:
+                    line = self.conn.readline()
+                    await self._line_handle(line)
+            except Exception as e:
+                # If we encounter an error validate that the client is still connected
+                print(f"Error {e}")
+                self.disable_msg_watch()
+                self.client_ready.wait()
 
     def _boot_handle(self):
         """Handle messages waiting for system to boot."""
@@ -58,7 +69,12 @@ class Satelite():
         elif raw_message == "$M138 DATETIME*35":
             self.transmit_ready = True
             # Read all queued msgs from the modem
+            print("Modem started!")
+            print("Waiting for client.")
+            self.client_ready.wait()
+            print("Reading msgs queued while client disconnected.")
             self.read_all_msgs()
+            print("msgs read.")
             self.ready = True
             return True
         else:
@@ -83,6 +99,7 @@ class Satelite():
         elif cmd == "$RD":
             if self.new_msg_callback is not None:
                 app_id, rssi, snr, fdev, msg_data = contents.split(",")
+                # Wait until the msg call back succeeds before removing it from the modem.
                 self.new_msg_callback(app_id, data)
                 # We don't get a msg ID so we just delete all msgs
                 # all queued msgs should have already been processed.
@@ -202,7 +219,7 @@ class Satelite():
             (app_id, msg_data, msg_id) = self.read_msg()
             if self.new_msg_callback is not none:
                 self.new_msg_callback(app_id, msg_data)
-            self.delete_msg(msg_id)
+                self.delete_msg(msg_id)
 
     def is_ready(self) -> bool:
         """Returns if the modem is ready for msgs."""
@@ -213,6 +230,8 @@ class Satelite():
         app_id is the application id.
         Data *must be* base64 encoded.
         """
+        if not self.ready:
+            raise Exception("satelite modem not ready.")
         try:
             self.lock.acquire()
             self.conn.irq(handler=None)

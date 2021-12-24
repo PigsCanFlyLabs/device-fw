@@ -37,6 +37,38 @@ lowest_freq = find_lowest_freq()
 # Go slow cause YOLO
 machine.freq(lowest_freq)
 
+global s
+global b
+
+def copy_msg_to_sat_modem(msg: str) -> str:
+    global s
+    app_id, data = msg.split(",")
+    return s.send_msg(app_id, data)
+
+def msg_acked(msgid: str):
+    global b
+    b.send_msg_acked(msgid)
+
+def copy_msg_to_ble(msg: str) -> str:
+    global b
+    b.send_msg(msg)
+
+def copy_error_to_ble(error: str) -> str:
+    global b
+    b.send_error(error)
+
+def txing_callback(modem_active: bool):
+    global b
+    if (modem_active):
+        b.disable()
+    else:
+        b.enable()
+
+def modem_ready():
+    global b
+    b.send_ready()
+
 display = find_display()
-b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display)
-s = Satelite(1)
+b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem)
+s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked, error_callback=copy_error_to_ble, txing_callback=txing_callback, ready_callback=modem_ready)
+uasyncio.get_event_loop().run_until_complete()
