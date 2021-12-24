@@ -1,11 +1,12 @@
+import machine
 from machine import I2C, Pin, SoftI2C, UART
 from time import sleep_ms
+import uasyncio
 import ubluetooth
 import ssd1306
 from esp32 import raw_temperature
-import datetime
 
-class bluetooth():
+class UARTBluetooth():
     
     def __init__(self, name: str, display=None, msg_callback=None):
         
@@ -59,16 +60,24 @@ class bluetooth():
                 self.msg += message
                 print(str(message))
                 if self.target_length == 0:
-                    if msg_callback is not None:
-                        msg_callback("".join(self.msg))
-                    self.display.text(str("".join(self.msg)), 0, 40)
+                    completed_msg = "".join(self.msg)
+                    uasyncio.create_task(self._msg_handle(completed_msg))
                     self.msg = []
                 elif self.target_length < 0:
                     # Error
                     e = "ERROR: INVALID MSG LEN"
                     self.send(len(e))
                     self.send(e)
-                
+                    self.target_length = 0
+                    self.msg = []
+                else:
+                    print(f"Waiting for {self.target_length} more chars.")
+
+
+    async def _msg_handle(completed_msg):
+        if self.msg_callback is not None:
+            self.msg_callback(completed_msg)
+            self.display.text(str("".join(self.msg)), 0, 40)
             self.display.show()
 
     def register(self):
@@ -114,36 +123,48 @@ class bluetooth():
 
 class Satelite():
 
-    def __init__(self, new_msg_callback=None, msg_acked_callback=None, error_callback=None):
-        self.conn = UART.init(baudrate=115200, tx=11, rx=12)
+    def __init__(self, uart_id, new_msg_callback=None, msg_acked_callback=None, error_callback=None, tx=11, rx=12):
+        print("Constructing connection to M138.")
+        self.conn = UART(uart_id)
         self.modem_started = False
         self.transmit_ready = False
         self.new_msg_callback = new_msg_callback
         self.msg_acked_callback = msg_acked_callback
         self.error_callback = error_callback
-        try:
-            self.conn.irq(handler=self._init_handle)
-        except:
-            # TODO make a new thread & handle polling
+        self.last_date = None
+        self.lock = uasyncio.Lock()
+        self.ready = False
+        # Not supported by all micropython
+        print("Seting up satelite msg handler...")
+        self.satelite_task = uasyncio.create_task(self.main_loop())
 
-    def _init_irq(self):
+    async def main_loop(self):
+        print("Initilizing UART.")
+        self.conn.init(baudrate=115200, tx=tx, rx=rx)
+        print("Initialized UART")
+        print("Waiting for satelite modem to boot.")
+        self._boot_handle()
+        print("Modem started!")
+        while (True):
+            line = self.conn.readline()
+            await self._line_handle(line)
+
+    def _boot_handle(self):
         """Handle messages waiting for system to boot."""
-        raw_message = UART.readline()
+        raw_message = self.conn.readline()
         if raw_message == "$M138 BOOT,RUNNING*49":
             self.modem_started = True
         elif raw_message == "$M138 DATETIME*35":
-            self.transmit_read = True
-            self.conn.irq(handler=self._prod_handle)
+            self.transmit_ready = True
+            # Read all queued msgs from the modem
+            self.read_all_msgs()
+            self.ready = True
+            return True
         else:
             print(raw_message)
 
-    def _prod_irq(self):
-        """Handle messages after modem bootup."""
-        msg = UART.readline()
-        _msg_handle(msg)
-
-    def _msg_handle(self, raw_msg):
-        msg = self._validate_msg(raw_msg):
+    async def _line_handle(self, raw_msg):
+        msg = self._validate_msg(raw_msg)
         if msg is None:
             print(f"Invalid msg {raw_msg}")
             return
@@ -151,30 +172,40 @@ class Satelite():
         print(f"Valid msg {msg}")
         cmd = msg.split(" ")[0][1:]
         contents = " ".join(msg.split(" ")[1:])
-        if msg == "$M138 BOOT,RUNNING*49":
+        if msg == "$M138 BOOT,RUNNING":
             self.modem_started = True
-        elif msg == "$M138 DATETIME*35":
+        elif msg == "$M138 DATETIME":
             self.transmit_read = True
-        elif cmd == "DT":
+        elif cmd == "$DT":
             self._update_dt(msg)
-        elif cmd == "RD":
-            if new_msg_callback is not None:
-                new_msg_callback(contents)
-        elif cmd == "RT":
+        elif cmd == "$RD":
+            if self.new_msg_callback is not None:
+                app_id, rssi, snr, fdev, msg_data = contents.split(",")
+                self.new_msg_callback(app_id, data)
+                # We don't get a msg ID so we just delete all msgs
+                # all queued msgs should have already been processed.
+                self.delete_msg("*")
+        elif cmd == "$RT":
             self._update_rt_time(contents)
-        elif cmd == "TD":
-            if "SENT" in contents:
-                self._msg_acked_callback(contents)
+        elif cmd == "$TD":
+            if contents.starts_with("SENT"):
+                msg_id = contents.split(",")[-1]
+                if self.msg_acked_callback is not None:
+                    self.msg_acked_callback(msg_id)
             elif "ERR" in contents:
-                self.error_callback(raw_msg)
+                if self.error_callback is not None:
+                    self.error_callback(raw_msg)
+
+
     def _update_rt_time(self, contents):
         elems = contents.split(",")
         for e in elems:
             if "TS" in e:
-                self.last_date = date_time.strftime("%Y-%m-%dT%H:%M:%S")
+                self.last_date = e
             
         
-    def checksum(self, data):
+    def _checksum(self, data) -> int:
+        """Compute the checksum for a given message."""
         data.strip()
         if "*" in sentence:
             data, cksum = re.split('\*', data)
@@ -185,54 +216,135 @@ class Satelite():
 
         return calc_cksum
 
+    def _checksum_formatted(self, data) -> str:
+        """Format the checksum as tw digit hex"""
+        return f"{_checksum(data):02x}"
+
     def _validate_msg(self, data):
+        """Validate a msg matches the checksum."""
         if "*" not in data:
             return False
         data, cksum = re.split('\*', data)
 
-        calc_cksum = self.checksum(data)
+        calc_cksum = self._checksum(data)
         
         if calc_cksum == int(cksum):
             return data
         else:
             return None
 
+    def send_command(self, data):
+        """Send a command to the modem."""
+        # Acquire the lock if not already acquired.
+        l_acquired = self.lock.acquired()
+        try:
+            self.lock.acquire()
+            checksum = self._checksum_formatted(data)
+            cmd = f"{data}*{checksum}"
+        finally:
+            if not l_acquired:
+                self.lock.release()
 
-    def is_swam_subscribed(self) -> bool:
-        """Return if the user has an active swarm subscription."""
-        return True
+    def del_msg(self, mid: str) -> bool:
+        """Delete a message from the modem."""
+        # We don't care about the response so much so just yeet it
+        self.send_command(f"$MM D={mid}")
 
-    def is_pcf_subscribed(self) -> bool:
-        """Return if the user has an active PCFLabs subscription."""
+    def check_for_msgs(self) -> int:
+        """Check msgs, returns number of messages"""
+        # We care about the response so disable the interrupt handler
+        try:
+            self.lock.acquire()
+            self.conn.irq(handler=None)
+            self.send_command("MM C=U")
+            line = self.conn.readline()
+            while not line.startswith("$MM"):
+                uasyncio.create_task(_line_handle(line))
+                line = self.conn.readline()
+            try:
+                line = self._validate_msg(line)
+                int(line.split(" ")[1])
+            except:
+                return -1
+        finally:
+            self.conn.irq(handler=self._prod_handle)
+            self.lock.release()
+
+    def read_msg(self, id=None) -> tuple[str, str]:
+        try:
+            self.lock.acquire()
+            self.conn.irq(handler=None)
+            if id is None:
+                id = "N"
+            self.send_command(f"$MM R={id}")
+            line = self.conn.readline()
+            while not line.startswith("$MM"):
+                uasyncio.create_task(self._line_handle(line))
+                line = self.conn.readline()
+            try:
+                line = self._validate_msg(line)
+                cmd_data = " ".join(line.split(" ")[1:])
+                app_id, msg_data, msg_id, es = cmd_data.split(",")
+                return (app_id, msg_data, msg_id)
+            except:
+                return -1
+        finally:
+            self.conn.irq(handler=self._current_handle)
+            self.lock.release()
+
+    def read_all_msgs(self):
+        """Read all the msgs and delete as we go."""
+        while self.check_for_msgs > 0:
+            (app_id, msg_data, msg_id) = self.read_msg()
+            if self.new_msg_callback is not none:
+                self.new_msg_callback(app_id, msg_data)
+            self.delete_msg(msg_id)
 
     def is_ready(self) -> bool:
         """Returns if the modem is ready for msgs."""
         return self.transmit_ready
     
-    def is_suspended(self) -> bool:
-        """Is the user suspended in some way."""
-
-    def get_date(self) -> datetime:
-        """Get the date."""
-
-    def send_msg(self, num, data) -> bool:
-
-    def suspend_device(self) -> bool:
-        """Mark the device as suspended and clear any msgs in queue.
-        Intended for misbehaving devices."""
+    def send_msg(self, app_id, data) -> str:
+        """Send a message, returning the message ID.
+        Data *must be* base64 encoded.
+        """
+        try:
+            self.lock.acquire()
+            self.conn.irq(handler=None)
+            self.send_command(f"$TD AI={app_id},{data}")
+            line = self.conn.readline()
+            while (not line.startswith("$TD")) and (not line.startswith("$TD SENT")):
+                uasyncio.create_task(self._line_handle(line))
+                line = self.conn.readline()
+            try:
+                line = self._validate_msg(line)
+                cmd_data = " ".join(line.split(" ")[1:])
+                if cmd_data.startswith("OK"):
+                    status, msg_id = cmd_data.split(",")
+                    return msg_id
+                else:
+                    if self.error_callback is not None:
+                        self.error_callback(line)
+                    return ""
+            except:
+                raise
+        finally:
+            self.conn.irq(handler=self._current_handle)
+            self.lock.release()
 
     def last_rt_time(self) -> datetime:
         """Last received test time (from swarm)."""
+        return self.last_date
 
     
 # Try and find a display if one is present
 
 def find_display():
     import machine
-    pin16 = machine.Pin(16, machine.Pin.OUT)
+    pin16 = Pin(16, Pin.OUT)
     pin16.value(1)
     import machine, ssd1306
-    i2c = SoftI2C(scl=machine.Pin(15), sda=machine.Pin(4))
+    i2c = SoftI2C(scl=Pin(15), sda=Pin(4))
     if len(i2c.scan()) != 0:
         oled = ssd1306.SSD1306_I2C(128, 64, i2c)
         oled.fill(0)
@@ -255,24 +367,11 @@ def find_lowest_freq():
             pass # We don't run at that speed I guess...
     return lowest
 
-running = 0
+lowest_freq = find_lowest_freq()
 
-@wraps(fn)
-def wakeup_go_sleep(*args, **kwargs):
-    global running
-    running += 1
-    try:
-        if machine.freq() < default_freq:
-            machine.freq(default_freq)
-    except:
-        pass # meh
-    try:
-        fn(*args, **kwargs)
-    finally:
-        running -= 1
-        if running < 1:
-            machine.freq(lowest)
-
+# Go slow cause YOLO
+machine.freq(lowest_freq)
 
 display = find_display()
-b = bluetooth("PigsCanFlyLabsLLCProtoType", display)
+b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display)
+s = Satelite(1)
