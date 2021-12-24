@@ -1,5 +1,4 @@
 import uasyncio
-import ubluetooth
 
 class UARTBluetooth():
     
@@ -8,6 +7,7 @@ class UARTBluetooth():
         
         self.name = name
         if ble is None:
+            import ubluetooth
             self.ble = ubluetooth.BLE()
         else:
             self.ble = ble
@@ -20,7 +20,8 @@ class UARTBluetooth():
         self.mtu = 10
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
-        self.register()
+        if ble is None:
+            self.register()
         self.advertise()
 
     def enable():
@@ -94,7 +95,9 @@ class UARTBluetooth():
             self.display.show()
 
     def register(self):
-        
+        """Register nordic UART service."""
+
+        import ubluetooth
         # Nordic UART Service (NUS)
         NUS_UUID = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'
         RX_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'

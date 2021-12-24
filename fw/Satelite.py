@@ -1,5 +1,4 @@
 import uasyncio
-from machine import UART
 
 class Satelite():
 
@@ -26,6 +25,7 @@ class Satelite():
         """
         print("Constructing connection to M138.")
         if myuart is None:
+            from machine import UART
             self.conn = UART(uart_id)
         else:
             self.conn = myconn
