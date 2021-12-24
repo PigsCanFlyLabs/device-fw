@@ -1,9 +1,7 @@
 #!/bin/bash
-set -ex
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-build_dir="${SCRIPT_DIR}/tmp-build"
-venv_dir="${build_dir}/microPython"
+source common.sh
+
 MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-v1.17}
 ESP_IDF_VERSION="v4.3.2"
 if [ ! -d "${build_dir}" ]; then
@@ -17,7 +15,7 @@ fi
 (dpkg -l |grep gcc-arm-none-eabi) || sudo apt-get install -y build-essential libreadline-dev libffi-dev git pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi
 
 
-source ./microPython/bin/activate
+source "${venv_dir}/bin/activate"
 
 # Install the esp-idf dev tool chain
 if ! command -v idf.py &> /dev/null; then
@@ -62,8 +60,9 @@ pushd ./ports/esp32
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
+make clean
 make submodules
 make BOARD=GENERIC
-make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw"
+#make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw"
 popd
 
