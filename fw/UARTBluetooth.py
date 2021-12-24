@@ -88,7 +88,7 @@ class UARTBluetooth():
             try:
                 id = self.msg_callback(completed_msg)
                 self.send(f"MSGID: {id}")
-            except Exception e:
+            except Exception as e:
                 self.send("ERROR: sat modem error {e}")
             self.display.text(str("".join(self.msg)), 0, 40)
             self.display.show()
