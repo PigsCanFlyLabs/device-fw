@@ -18,7 +18,7 @@ jobs:
       with:
         fetch-depth: 0
         repository: PigsCanFlyLabs/device-fw
-        ref: master
+        ref: main
     - name: Sync the current branch with the latest in spark-testing-base
       if: github.repository != 'PigsCanFlyLabs/device-fw'
       id: sync-branch
