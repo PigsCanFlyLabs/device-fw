@@ -68,7 +68,17 @@ def modem_ready():
     global b
     b.send_ready()
 
+
 display = find_display()
-b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem)
-s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked, error_callback=copy_error_to_ble, txing_callback=txing_callback, ready_callback=modem_ready)
+client_ready = uasyncio.Event()
+
+def client_ready_callback(flag: bool):
+    if flag:
+        client_ready.set()
+    else:
+        client_ready.clear()
+
+b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem, client_ready_callback=client_ready_callback)
+s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked, error_callback=copy_error_to_ble, txing_callback=txing_callback, ready_callback=modem_ready, client_ready=client_ready)
+s.start()
 uasyncio.get_event_loop().run_until_complete()

@@ -11,7 +11,9 @@ class Satelite():
                  uart_tx=11,
                  uart_rx=12,
                  ready_callback=None,
-                 myconn=None):
+                 myconn=None,
+                 client_ready=None,
+                 max_retries=-1):
         """Initialize a connection to the satelite modem. Allows setting myconn for testing.
         uart_id is the ID of the uart controller to use
         new_msg_callback should take app_id (str) and data (str, base64 encoded)
@@ -22,6 +24,7 @@ class Satelite():
         uart_tx is the UART tx pin
         uart_rx is the UART rx pin
         ready_callback is a callback to indicate the modem can receive msgs
+        client_ready is a ThreadSafeFlag of when the client is ready.
         """
         print("Constructing connection to M138.")
         if myconn is None:
@@ -29,6 +32,7 @@ class Satelite():
             self.conn = UART(uart_id)
         else:
             self.conn = myconn
+        print(f"Using uart {self.conn}")
         self.modem_started = False
         self.transmit_ready = False
         self.new_msg_callback = new_msg_callback
@@ -37,47 +41,76 @@ class Satelite():
         self.last_date = None
         self.lock = uasyncio.Lock()
         self.ready = False
+        self.max_retries = max_retries
+        self.ready_callback = ready_callback
+        self.client_ready = client_ready
         print("Initilizing UART.")
         self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
         print("Seting up satelite msg handler...")
+
+    def start(self):
         self.satelite_task = uasyncio.create_task(self.main_loop())
+        print(f"Task created for msg handles - {self.satelite_task}")
 
     async def main_loop(self):
-        print("Initialized UART")
         print("Waiting for satelite modem to boot.")
-        self._boot_handle()
-        while True:
-            self.ready_callback()
-            self.read_all_msgs()
-            self.enable_msg_watch()
+        while not self._modem_ready():
+            await uasyncio.sleep(1)
+        retries = 0
+        print("Sat modem started, entering main loop.")
+        while self.max_retries == -1 or retries < self.max_retries:
+            print("Waiting for client to become ready...")
+            await self.client_ready.wait()
+            self.ready = True
+            if self.ready_callback is not None:
+                self.ready_callback()
+            print("ready callback done.")
+            await self.read_all_msgs()
+            print("all queued msgs read.")
+            self._enable_msg_watch()
+            print("msg watch enabled.")
             try:
                 while True:
                     line = self.conn.readline()
                     await self._line_handle(line)
+                    await asyncio.sleep(1)
             except Exception as e:
                 # If we encounter an error validate that the client is still connected
-                print(f"Error {e}")
-                self.disable_msg_watch()
+                self.ready = False
+                print(f"Error in main loop {e}")
+                self._disable_msg_watch()
                 self.client_ready.wait()
+                retries = retries + 1
+        print(f"Finishing main loop with {retries}")
 
-    def _boot_handle(self):
+    def _modem_ready(self):
         """Handle messages waiting for system to boot."""
-        raw_message = self.conn.readline()
+        # Note the developer docs have incorrect checksums for the boot sequence
+        # so (for now) we'll support both of them.
+        if self.transmit_ready and self.modem_started:
+            return True
+        raw_message = None
+        while raw_message is None:
+            try:
+                raw_message = self.conn.readline()
+                print(f"Read line {raw_message}")
+            except Exception as e:
+                print(f"Error reading line during modem boot - {e} {self.conn}")
+                import time
+                time.sleep(1)
+        msg = self._validate_msg(raw_message)
         if raw_message == "$M138 BOOT,RUNNING*49":
             self.modem_started = True
         elif raw_message == "$M138 DATETIME*35":
             self.transmit_ready = True
-            # Read all queued msgs from the modem
-            print("Modem started!")
-            print("Waiting for client.")
-            self.client_ready.wait()
-            print("Reading msgs queued while client disconnected.")
-            self.read_all_msgs()
-            print("msgs read.")
-            self.ready = True
             return True
-        else:
-            print(raw_message)
+        elif msg is not None:
+            if msg == "$M138 BOOT,RUNNING":
+                self.modem_started = True
+            elif msg == "$M138 DATETIME":
+                self.transmit_read = True
+                return True
+        return False
 
     async def _line_handle(self, raw_msg):
         """Handle post boot messages from the M138 modem."""
@@ -100,9 +133,8 @@ class Satelite():
                 app_id, rssi, snr, fdev, msg_data = contents.split(",")
                 # Wait until the msg call back succeeds before removing it from the modem.
                 self.new_msg_callback(app_id, data)
-                # We don't get a msg ID so we just delete all msgs
-                # all queued msgs should have already been processed.
-                self.delete_msg("*")
+                # We don't have a msg id here, but for safety leave it to the client (phone)
+                # to explicitily call delete msgs later.
         elif cmd == "$RT":
             self._update_rt_time(contents)
         elif cmd == "$TD":
@@ -114,6 +146,11 @@ class Satelite():
                 if self.error_callback is not None:
                     self.error_callback(raw_msg)
 
+    async def _enable_msg_watch(self):
+        self.send("$MM N=E")
+
+    async def _disable_msg_watch(self):
+        self.send("$MM N=D")
 
     def _update_rt_time(self, contents):
         """Update the last rt time."""
@@ -125,75 +162,81 @@ class Satelite():
         
     def _checksum(self, data) -> int:
         """Compute the checksum for a given message."""
+        # Drop the trailing newline
         data.strip()
-        if "*" in sentence:
-            data, cksum = re.split('\*', data)
 
+        #Drop the leading $ if present
+        if data[0] == '$':
+            data = data[1:]
+
+        # Drop the trailing *xx
+        if data[-3] == '*':
+            data = data[:-3]
         calc_cksum = 0
-        for s in adata:
+
+        for s in data:
             calc_cksum ^= ord(s)
 
         return calc_cksum
 
     def _checksum_formatted(self, data) -> str:
         """Format the checksum as tw digit hex"""
-        return f"{_checksum(data):02x}"
+        return f"{self._checksum(data):02X}"
 
     def _validate_msg(self, data):
         """Validate a msg matches the checksum."""
-        if "*" not in data:
-            return False
-        data, cksum = re.split('\*', data)
-
+        # Parse the trailing *xx
+        if len(data) > 3 and data[-3] == '*':
+            cksum = data[-2:]
+            data = data[:-3]
+        else:
+            return None
+            
         calc_cksum = self._checksum(data)
         
-        if calc_cksum == int(cksum):
+        if calc_cksum == int(cksum, 16):
             return data
         else:
             return None
 
     def send_command(self, data):
-        """Send a command to the modem. Calculates the checksum."""
-        # Acquire the lock if not already acquired.
-        l_acquired = self.lock.acquired()
-        try:
-            self.lock.acquire()
-            checksum = self._checksum_formatted(data)
-            cmd = f"{data}*{checksum}"
-        finally:
-            if not l_acquired:
-                self.lock.release()
+        """Send a command to the modem. Calculates the checksum.
+        Caller should hold the lock otherwise bad things may happen.
+        """
+        checksum = self._checksum_formatted(data)
+        cmd = f"{data}*{checksum}"
+        self.conn.write(cmd)
 
     def del_msg(self, mid: str) -> bool:
         """Delete a message from the modem."""
         # We don't care about the response so much so just yeet it
         self.send_command(f"$MM D={mid}")
 
-    def check_for_msgs(self) -> int:
+    def enable_msg_watch(self):
+        """Enable msg watch."""
+
+    async def check_for_msgs(self) -> int:
         """Check msgs, returns number of messages."""
         # We care about the response so disable the interrupt handler
-        try:
-            self.lock.acquire()
-            self.conn.irq(handler=None)
+        async with self.lock:
             self.send_command("MM C=U")
             line = self.conn.readline()
-            while not line.startswith("$MM"):
-                uasyncio.create_task(_line_handle(line))
+            while not line.startswith("$MM") or self._validate_msg(line) is None:
+                print(f"un-expected msg line {line}, creatig task to handle later.")
+                uasyncio.create_task(self._line_handle(line))
                 line = self.conn.readline()
             try:
                 line = self._validate_msg(line)
-                int(line.split(" ")[1])
-            except:
+                parsed = int(line.split(" ")[1])
+                print(f"We have {parsed} messages.")
+                return parsed
+            except Exception as e:
+                print(f"Error fetching msgs... {e}")
                 return -1
-        finally:
-            self.conn.irq(handler=self._prod_handle)
-            self.lock.release()
 
-    def read_msg(self, id=None) -> tuple[str, str]:
+    async def read_msg(self, id=None) -> tuple[str, str]:
         """Read either a specific msg id or the most recent msg."""
-        try:
-            self.lock.acquire()
-            self.conn.irq(handler=None)
+        async with self.lock:
             if id is None:
                 id = "N"
             self.send_command(f"$MM R={id}")
@@ -208,17 +251,18 @@ class Satelite():
                 return (app_id, msg_data, msg_id)
             except:
                 return -1
-        finally:
-            self.conn.irq(handler=self._current_handle)
-            self.lock.release()
 
-    def read_all_msgs(self):
+    async def read_all_msgs(self):
         """Read all the msgs and delete as we go."""
-        while self.check_for_msgs > 0:
+        msg_count = await self.check_for_msgs()
+        while msg_count > 0:
+            print("Reading msg.")
             (app_id, msg_data, msg_id) = self.read_msg()
             if self.new_msg_callback is not none:
                 self.new_msg_callback(app_id, msg_data)
                 self.delete_msg(msg_id)
+            msg_count = await self.check_for_msgs()
+        print("Done reading all msgs")
 
     def is_ready(self) -> bool:
         """Returns if the modem is ready for msgs."""
@@ -233,7 +277,6 @@ class Satelite():
             raise Exception("satelite modem not ready.")
         try:
             self.lock.acquire()
-            self.conn.irq(handler=None)
             self.send_command(f"$TD AI={app_id},{data}")
             line = self.conn.readline()
             while (not line.startswith("$TD")) and (not line.startswith("$TD SENT")):
@@ -252,7 +295,6 @@ class Satelite():
             except:
                 raise
         finally:
-            self.conn.irq(handler=self._current_handle)
             self.lock.release()
 
     def last_rt_time(self) -> datetime:

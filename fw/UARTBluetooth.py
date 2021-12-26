@@ -2,7 +2,7 @@ import uasyncio
 
 class UARTBluetooth():
     
-    def __init__(self, name: str, display=None, msg_callback=None, ble=None):
+    def __init__(self, name: str, display=None, msg_callback=None, ble=None, client_ready_callback=None):
         """Initialize the UART BLE handler. For testing allows ble to be supplied."""
         
         self.name = name
@@ -18,6 +18,7 @@ class UARTBluetooth():
         self.msg = []
         self.target_length = 0
         self.mtu = 10
+        self.client_ready = client_ready
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
         if ble is None:
@@ -48,6 +49,7 @@ class UARTBluetooth():
                 self.connected = True
                 # Negotiate MTU
                 self.ble.gattc_exchange_mtu()
+                uasyncio.create_task(self.client_ready_callback(True))
             elif event == _IRQ_MTU_EXCHANGED:
                 # ATT MTU exchange complete (either initiated by us or the remote device).
                 conn_handle, self.mtu = data
@@ -55,6 +57,7 @@ class UARTBluetooth():
                 # Disconnected
                 self.connected = False
                 self.advertise()
+                uasyncio.create_task(self.client_ready_callback(False))
             elif event == 3:
                 # msg received, note that BLE UART spec means msg data may be chunked
                 buffer = self.ble.gatts_read(self.rx)
