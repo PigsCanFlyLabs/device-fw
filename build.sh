@@ -16,7 +16,7 @@ fi
 # Note: can not be called from inside a venv
 if ! command -v idf.py &> /dev/null; then
   if [ ! -d "esp-idf" ]; then
-    git clone -b "${ESP_IDF_VERSION}" --recursive https://github.com/espressif/esp-idf.git
+    git clone -b "${ESP_IDF_VERSION}" --recursive https://github.com/espressif/esp-idf.git &> clone_logs || (cat clone_logs; exit 1)
   fi
   pushd esp-idf
   if [ ! -d "~/.espressif" ]; then
@@ -34,7 +34,7 @@ pushd ./microPython/project
 
 pwd
 if [ ! -d "micropython" ]; then
-  git clone --recurse-submodules https://github.com/micropython/micropython.git
+  git clone --recurse-submodules https://github.com/micropython/micropython.git &> clone_logs || (cat clone_logs; exit 1)
 fi
 pushd micropython
 MP_ROOT=$(pwd)
