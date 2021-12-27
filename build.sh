@@ -12,9 +12,8 @@ if [ ! -d "${venv_dir}" ]; then
   virtualenv  "${venv_dir}"
 fi
 
-source "${venv_dir}/bin/activate"
-
-# Install the esp-idf dev tool chain
+# Install the esp-idf dev tool chain if needed
+# Note: can not be called from inside a venv
 if ! command -v idf.py &> /dev/null; then
   if [ ! -d "esp-idf" ]; then
     git clone -b "${ESP_IDF_VERSION}" --recursive https://github.com/espressif/esp-idf.git
@@ -27,6 +26,8 @@ if ! command -v idf.py &> /dev/null; then
   popd
 fi
 
+# Activate the venv now that we have the esp dev env
+source "${venv_dir}/bin/activate"
 
 mkdir -p ./microPython/project
 pushd ./microPython/project
