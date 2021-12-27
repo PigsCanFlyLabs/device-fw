@@ -70,7 +70,7 @@ def modem_ready():
 
 
 display = find_display()
-client_ready = uasyncio.Event()
+client_ready = uasyncio.ThreadSafeFlag()
 
 def client_ready_callback(flag: bool):
     if flag:
