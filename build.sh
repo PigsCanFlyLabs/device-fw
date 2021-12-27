@@ -12,11 +12,6 @@ if [ ! -d "${venv_dir}" ]; then
   virtualenv  "${venv_dir}"
 fi
 
-(dpkg -l |grep gcc-arm-none-eabi) || sudo apt-get install -y build-essential libreadline-dev libffi-dev git pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi
-if ! command -v virtualenv &> /dev/null; then
-  sudo apt-get install -y python3-virtualenv
-fi
-
 source "${venv_dir}/bin/activate"
 
 # Install the esp-idf dev tool chain
