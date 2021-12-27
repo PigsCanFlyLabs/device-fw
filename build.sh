@@ -64,8 +64,7 @@ if [ ! -d "~/.micropython/lib/" ]; then
   micropython -m upip install unittest
 fi
 # Run some smoke tests
-popd
-pushd fw
+pushd "${FW_DIR}"
 micropython -c "import unittest;unittest.main('smoke_test')"
 popd
 pushd "${MP_ROOT}/ports/esp32"
