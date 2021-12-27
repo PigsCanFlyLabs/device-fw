@@ -34,7 +34,7 @@ pushd ./microPython/project
 
 pwd
 if [ ! -d "micropython" ]; then
-  git clone --recurse-submodules https://github.com/github.com/micropython/micropython.git
+  git clone --recurse-submodules https://github.com/micropython/micropython.git
 fi
 pushd micropython
 MP_ROOT=$(pwd)
