@@ -32,9 +32,3 @@ jobs:
     # Run the tests.
     - name: Run tests
       run: ./build.sh
-    - name: Cache tmp-build
-      uses: actions/cache@v2
-      with:
-        path: |
-          ~/tmp-build/esp-idf
-          key: ${{ runner.os }}-${{ hashFiles('**/lockfiles') }}
