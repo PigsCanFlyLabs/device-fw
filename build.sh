@@ -26,10 +26,6 @@ if ! command -v idf.py &> /dev/null; then
   popd
 fi
 
-# Activate the venv now that we have the esp dev env
-source "${venv_dir}/bin/activate"
-pip install click
-
 mkdir -p ./microPython/project
 pushd ./microPython/project
 
@@ -53,8 +49,8 @@ if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross/mpy-cross" ]; 
 fi
 pushd ./ports/unix
 if [ ! -f "micorpython" ]; then
-  make submodules
-  make
+  make submodules &> submod
+  make &> base
   export PATH="${PATH}:$(pwd)"
 fi
 popd
@@ -72,8 +68,8 @@ pushd "${MP_ROOT}/ports/esp32"
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
-make submodules
-make BOARD=GENERIC
+make submodules &> submod
+make BOARD=GENERIC &> base
 make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
 popd
 
