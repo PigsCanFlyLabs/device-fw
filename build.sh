@@ -20,7 +20,7 @@ if ! command -v idf.py &> /dev/null; then
   fi
   pushd esp-idf
   if [ ! -d "~/.espressif" ]; then
-    ./install.sh
+    (./install.sh &> espidf_install) || (cat espidf_install; exit 1)
   fi
   source ./export.sh
   popd
@@ -28,6 +28,7 @@ fi
 
 # Activate the venv now that we have the esp dev env
 source "${venv_dir}/bin/activate"
+pip install click
 
 mkdir -p ./microPython/project
 pushd ./microPython/project
