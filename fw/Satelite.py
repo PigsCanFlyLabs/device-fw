@@ -44,6 +44,7 @@ class Satelite():
         self.max_retries = max_retries
         self.ready_callback = ready_callback
         self.client_ready = client_ready
+        self.device_id = None
         print("Initilizing UART.")
         self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
         print("Initialized, making stream r/w.")
@@ -77,7 +78,7 @@ class Satelite():
             print("ready callback done.")
             await self.read_all_msgs()
             print("all queued msgs read.")
-            self._enable_msg_watch()
+            await self._enable_msg_watch()
             print("msg watch enabled.")
             try:
                 while True:
@@ -88,8 +89,8 @@ class Satelite():
                 # If we encounter an error validate that the client is still connected
                 self.ready = False
                 print(f"Error in main loop {e}")
-                self._disable_msg_watch()
-                self.client_ready.wait()
+                await self._disable_msg_watch()
+                await self.client_ready.wait()
                 retries = retries + 1
         print(f"Finishing main loop with {retries} retries")
 
@@ -161,10 +162,10 @@ class Satelite():
                     self.error_callback(raw_msg)
 
     async def _enable_msg_watch(self):
-        self.send("$MM N=E")
+        self.send_command("$MM N=E")
 
     async def _disable_msg_watch(self):
-        self.send("$MM N=D")
+        self.send_command("$MM N=D")
 
     def _update_rt_time(self, contents):
         """Update the last rt time."""
@@ -224,9 +225,6 @@ class Satelite():
         # We don't care about the response so much so just yeet it
         self.send_command(f"$MM D={mid}")
 
-    async def enable_msg_watch(self):
-        """Enable msg watch."""
-
     async def check_for_msgs(self) -> int:
         """Check msgs, returns number of messages."""
         # We care about the response so disable the interrupt handler
@@ -246,7 +244,29 @@ class Satelite():
                 print(f"Error fetching msgs... {e}")
                 return -1
 
-    async def read_msg(self, id=None) -> tuple[str, str]:
+    async def device_id(self) -> str:
+        """Return the device id."""
+        if self._device_id is not None:
+            return self._device_id
+        try:
+            async with self.lock:
+                self.send_command("CS")
+                line = await self.sreader.readline()
+                while not line.startswith("$CS"):
+                    uasyncio.create_task(self._line_handle(line))
+                    line = await self.sreader.readline()
+                    line = self._validate_msg(line)
+                    cmd_data = " ".join(line.split(" ")[1:])
+                    device_id, device_name = cmd_data.split(",")
+                    self._device_id = device_id
+                    return device_id
+        except Exception as e:
+            print(f"Error {e} reading device id trying again.")
+            await uasyncio.sleep(5)
+            return await self.device_id()
+            
+    
+    async def read_msg(self, id=None) -> tuple[str, str, str]:
         """Read either a specific msg id or the most recent msg."""
         async with self.lock:
             if id is None:
@@ -254,15 +274,17 @@ class Satelite():
             self.send_command(f"$MM R={id}")
             line = await self.sreader.readline()
             while not line.startswith("$MM"):
+                print(f"looping {line}")
                 uasyncio.create_task(self._line_handle(line))
                 line = await self.sreader.readline()
             try:
                 line = self._validate_msg(line)
                 cmd_data = " ".join(line.split(" ")[1:])
                 app_id, msg_data, msg_id, es = cmd_data.split(",")
+                app_id = int(app_id)
                 return (app_id, msg_data, msg_id)
             except:
-                return -1
+                return None
 
     async def read_all_msgs(self):
         """Read all the msgs and delete as we go."""

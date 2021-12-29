@@ -114,3 +114,14 @@ class SateliteSmokeTest(unittest.TestCase):
         print("k2")
         self.assertEqual(s.transmit_ready, True)
         print("k3")
+
+    def test_read_msg(self):
+        conn = FakeUART(lines=[
+            "butts",
+            "$M138 DATETIME*35",
+            "$MM 120,1337DEADBEEF,1,1*39"])
+        s = Satelite(1, myconn=conn, max_retries = 1)
+        app_id, msg_data, msg_id = uasyncio.run(s.read_msg())
+        self.assertEqual(app_id, 120)
+        self.assertEqual(msg_data, "1337DEADBEEF")
+        self.assertEqual(msg_id, "1")

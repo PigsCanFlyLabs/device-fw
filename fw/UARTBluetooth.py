@@ -2,7 +2,7 @@ import uasyncio
 
 class UARTBluetooth():
     
-    def __init__(self, name: str, display=None, msg_callback=None, ble=None, client_ready_callback=None):
+    def __init__(self, name: str, display=None, msg_callback=None, ble=None, client_ready_callback=None, set_phone_id=None):
         """Initialize the UART BLE handler. For testing allows ble to be supplied."""
         
         self.name = name
@@ -15,10 +15,14 @@ class UARTBluetooth():
         self.enable()
         self.connected = False
         self.display = display
-        self.msg = []
         self.target_length = 0
         self.mtu = 10
         self.client_ready = client_ready
+        self.set_phone_id_callback = set_phone_id
+        self.msg_buffer = bytearray(1000)
+        self.mv_msg_buffer = memoryview(self.msg_buffer)
+        self.msg_buffer_idx = 0
+        self.ready = True
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
         if ble is None:
@@ -61,36 +65,48 @@ class UARTBluetooth():
             elif event == 3:
                 # msg received, note that BLE UART spec means msg data may be chunked
                 buffer = self.ble.gatts_read(self.rx)
-                self._handle_received_buffer(buffer)
-                
-    def _handle_received_buffer(self, buffer):
                 if (self.target_length == 0):
                     # Little endian like x86
                     self.target_length = int.from_bytes(buffer, 'little')
                     print(f"Setting target length to {self.target_length}")
                     return
-                message = buffer.decode('UTF-8').strip()
+                # If we're still processing the last message ask the client to repeat it.
+                if not self.ready:
+                    self.send("REPEAT")
                 self.target_length -= len(buffer)
-                self.msg += message
-                print(str(message))
+                new_end = msg_buffer_idx + len(buffer)
+                self.msg_buffer[msg_buffer_idx:new_end] = buffer
                 if self.target_length == 0:
-                    completed_msg = "".join(self.msg)
-                    uasyncio.create_task(self._msg_handle(completed_msg))
-                    self.msg = []
+                    # Use mv_msg_buffer to avoid allocation
+                    micropython.schedule(self._handle_phone_buffer, self.mv_msg_buffer[:new_end])
                 elif self.target_length < 0:
+                    self.msg_buffer_idx = 0
                     # Error
                     e = "ERROR: INVALID MSG LEN"
                     self.send(e)
                     self.target_length = 0
-                    self.msg = []
                 else:
+                    self.msg_buffer_idx = new_end
                     print(f"Waiting for {self.target_length} more chars.")
 
+    def _handle_phone_buffer(self, buffer_veiw):
+        try:
+            if buffer_veiw[0] == 'M':
+                # Two bytes for message ID
+                msg_id = int.from_bytes(buffer[:2])
+                msg_str = completed_msg[3:].decode('UTF-8').strip()
+                uasyncio.create_task(self._msg_handle(msg_str))
+            elif msg_buffer[0] == 'P':
+                completed_msg[1:].decode('UTF-8').strip()
+                uasyncio.create_task(self.set_phone_id_callback(msg_str))
+                self.msg = []
+        finally:
+            self.ready = True
 
     async def _msg_handle(self, completed_msg):
         if self.msg_callback is not None:
             try:
-                id = self.msg_callback(completed_msg)
+                id = await self.msg_callback(completed_msg)
                 self.send(f"MSGID: {id}")
             except Exception as e:
                 self.send("ERROR: sat modem error {e}")

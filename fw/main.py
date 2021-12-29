@@ -4,6 +4,10 @@ import uasyncio
 import ssd1306
 from UARTBluetooth import UARTBluetooth
 from Satelite import Satelite
+import micropython
+
+micropython.alloc_emergency_exception_buf(400)
+
 
 # Try and find a display if one is present
 def find_display():
@@ -39,11 +43,25 @@ machine.freq(lowest_freq)
 
 global s
 global b
+global phone_id
+phone_id = None
+try:
+    with open("phone_id", "r") as p:
+        phone_id = p.readline()
+except Exception as e:
+    print(f"Couldnt read phone id {e}")
 
-def copy_msg_to_sat_modem(msg: str) -> str:
+async def set_phone_id(new_phone_id: str):
+    phone_id = new_phone_id
+    with open("phone_id", "w") as p:
+        p.write(phoneid)
+
+async def copy_msg_to_sat_modem(msg: str) -> str:
     global s
+    if phone_id is None:
+        raise Exception(f"Device {await s.device_id()} not configured")
     app_id, data = msg.split(",")
-    return s.send_msg(app_id, data)
+    return await s.send_msg(app_id, data)
 
 def msg_acked(msgid: str):
     global b
@@ -78,7 +96,7 @@ def client_ready_callback(flag: bool):
     else:
         client_ready.clear()
 
-b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem, client_ready_callback=client_ready_callback)
+b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem, client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
 s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked, error_callback=copy_error_to_ble, txing_callback=txing_callback, ready_callback=modem_ready, client_ready=client_ready)
 s.start()
 uasyncio.get_event_loop().run_until_complete()
