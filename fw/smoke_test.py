@@ -1,12 +1,13 @@
 import unittest
-from UARTBluetooth import UARTBluetooth
 from Satelite import Satelite
 import uasyncio
+
 
 class TestStringMethods(unittest.TestCase):
 
     def test_upper(self):
         self.assertEqual('foo'.upper(), 'FOO')
+
 
 class FakeUART():
     def __init__(self, lines=[]):
@@ -17,16 +18,16 @@ class FakeUART():
         self.lines = lines
         self.sent_lines = []
         pass
-    
+
     def init(self, baudrate=0, tx=None, rx=None):
         self.baudrate = baudrate
         self.tx = tx
         self.rx = rx
 
     async def readline(self):
-        l = self.lines.pop(0)
-        print(f"Serving fake line {l}")
-        return l
+        line = self.lines.pop(0)
+        print(f"Serving fake line {line}")
+        return line
 
     def write(self, cmd):
         print(f"Sendig fake line {cmd}")
@@ -35,11 +36,13 @@ class FakeUART():
     async def flush(self):
         return True
 
+
 class SateliteSmokeTest(unittest.TestCase):
 
     def test_fake_start(self):
         conn = FakeUART()
         s = Satelite(1, myconn=conn)
+        self.assertEqual(s.conn, conn)
         self.assertEqual(conn.baudrate, 115200)
         self.assertEqual(conn.tx, 11)
         self.assertEqual(conn.rx, 12)
@@ -97,8 +100,7 @@ class SateliteSmokeTest(unittest.TestCase):
         print(f"Fake uart {conn}")
         client_ready = uasyncio.ThreadSafeFlag()
         client_ready.set()
-        s = Satelite(1, myconn=conn, client_ready=client_ready, max_retries = 1)
-        import time
+        s = Satelite(1, myconn=conn, client_ready=client_ready, max_retries=1)
         s.start()
         try:
             uasyncio.get_event_loop().run_until_complete(s.satelite_task)
@@ -120,7 +122,7 @@ class SateliteSmokeTest(unittest.TestCase):
             "butts",
             "$M138 DATETIME*35",
             "$MM 120,1337DEADBEEF,1,1*39"])
-        s = Satelite(1, myconn=conn, max_retries = 1)
+        s = Satelite(1, myconn=conn, max_retries=1)
         app_id, msg_data, msg_id = uasyncio.run(s.read_msg())
         self.assertEqual(app_id, 120)
         self.assertEqual(msg_data, "1337DEADBEEF")

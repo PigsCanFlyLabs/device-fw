@@ -1,5 +1,5 @@
 import machine
-from machine import I2C, Pin, SoftI2C, UART
+from machine import Pin, SoftI2C
 import uasyncio
 import ssd1306
 from UARTBluetooth import UARTBluetooth
@@ -22,7 +22,10 @@ def find_display():
         return oled
     return None
 
+
 default_freq = machine.freq
+
+
 def find_lowest_freq():
     import machine
     lowest = machine.freq()
@@ -32,9 +35,11 @@ def find_lowest_freq():
             if x < lowest:
                 machine.freq(x)
                 lowest = x
-        except:
-            pass # We don't run at that speed I guess...
+        except Exception as e:
+            print(f"We can't run at {x} because {e}")
+            pass  # We don't run at that speed I guess...
     return lowest
+
 
 lowest_freq = find_lowest_freq()
 
@@ -44,36 +49,46 @@ machine.freq(lowest_freq)
 global s
 global b
 global phone_id
+
 phone_id = None
+
 try:
     with open("phone_id", "r") as p:
         phone_id = p.readline()
 except Exception as e:
     print(f"Couldnt read phone id {e}")
 
+
 async def set_phone_id(new_phone_id: str):
+    global phone_id
     phone_id = new_phone_id
     with open("phone_id", "w") as p:
-        p.write(phoneid)
+        p.write(phone_id)
+
 
 async def copy_msg_to_sat_modem(msg: str) -> str:
     global s
+    global phone_id
     if phone_id is None:
         raise Exception(f"Device {await s.device_id()} not configured")
     app_id, data = msg.split(",")
     return await s.send_msg(app_id, data)
 
+
 def msg_acked(msgid: str):
     global b
     b.send_msg_acked(msgid)
+
 
 def copy_msg_to_ble(msg: str) -> str:
     global b
     b.send_msg(msg)
 
+
 def copy_error_to_ble(error: str) -> str:
     global b
     b.send_error(error)
+
 
 def txing_callback(modem_active: bool):
     global b
@@ -81,6 +96,7 @@ def txing_callback(modem_active: bool):
         b.disable()
     else:
         b.enable()
+
 
 def modem_ready():
     global b
@@ -90,13 +106,18 @@ def modem_ready():
 display = find_display()
 client_ready = uasyncio.ThreadSafeFlag()
 
+
 def client_ready_callback(flag: bool):
     if flag:
         client_ready.set()
     else:
         client_ready.clear()
 
-b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem, client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
-s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked, error_callback=copy_error_to_ble, txing_callback=txing_callback, ready_callback=modem_ready, client_ready=client_ready)
+
+b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem,
+                  client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
+s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
+             error_callback=copy_error_to_ble, txing_callback=txing_callback,
+             ready_callback=modem_ready, client_ready=client_ready)
 s.start()
 uasyncio.get_event_loop().run_until_complete()

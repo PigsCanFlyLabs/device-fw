@@ -1,5 +1,6 @@
 import uasyncio
 
+
 class Satelite():
 
     def __init__(self, uart_id,
@@ -84,7 +85,7 @@ class Satelite():
                 while True:
                     line = await self.sreader.readline()
                     await self._line_handle(line)
-                    await asyncio.sleep(1)
+                    await uasyncio.sleep(1)
             except Exception as e:
                 # If we encounter an error validate that the client is still connected
                 self.ready = False
@@ -130,10 +131,11 @@ class Satelite():
     async def _line_handle(self, raw_msg):
         """Handle post boot messages from the M138 modem."""
         msg = self._validate_msg(raw_msg)
+
         if msg is None:
             print(f"Invalid msg {raw_msg}")
             return
-        
+
         print(f"Valid msg {msg}")
         cmd = msg.split(" ")[0][1:]
         contents = " ".join(msg.split(" ")[1:])
@@ -147,7 +149,7 @@ class Satelite():
             if self.new_msg_callback is not None:
                 app_id, rssi, snr, fdev, msg_data = contents.split(",")
                 # Wait until the msg call back succeeds before removing it from the modem.
-                self.new_msg_callback(app_id, data)
+                self.new_msg_callback(int(app_id), msg_data)
                 # We don't have a msg id here, but for safety leave it to the client (phone)
                 # to explicitily call delete msgs later.
         elif cmd == "$RT":
@@ -173,13 +175,12 @@ class Satelite():
         for e in elems:
             if "TS" in e:
                 self.last_date = e
-            
-        
+
     def _checksum(self, data) -> int:
         """Compute the checksum for a given message."""
         # Drop the trailing newline
         data.strip()
-        #Drop the leading $ if present
+        # Drop the leading $ if present
         if len(data) > 1 and data[0] == '$':
             data = data[1:]
         # Drop the trailing *xx
@@ -203,7 +204,7 @@ class Satelite():
             data = data[:-3]
         else:
             return None
-            
+
         calc_cksum = self._checksum(data)
 
         if calc_cksum == int(cksum, 16):
@@ -264,8 +265,7 @@ class Satelite():
             print(f"Error {e} reading device id trying again.")
             await uasyncio.sleep(5)
             return await self.device_id()
-            
-    
+
     async def read_msg(self, id=None) -> tuple[str, str, str]:
         """Read either a specific msg id or the most recent msg."""
         async with self.lock:
@@ -283,7 +283,8 @@ class Satelite():
                 app_id, msg_data, msg_id, es = cmd_data.split(",")
                 app_id = int(app_id)
                 return (app_id, msg_data, msg_id)
-            except:
+            except Exception as e:
+                print(f"Exception {e} while reading msg.")
                 return None
 
     async def read_all_msgs(self):
@@ -292,7 +293,7 @@ class Satelite():
         while msg_count > 0:
             print("Reading msg.")
             (app_id, msg_data, msg_id) = self.read_msg()
-            if self.new_msg_callback is not none:
+            if self.new_msg_callback is not None:
                 self.new_msg_callback(app_id, msg_data)
                 self.delete_msg(msg_id)
             msg_count = await self.check_for_msgs()
@@ -301,7 +302,7 @@ class Satelite():
     def is_ready(self) -> bool:
         """Returns if the modem is ready for msgs."""
         return self.transmit_ready
-    
+
     async def send_msg(self, app_id, data) -> str:
         """Send a message, returning the message ID.
         app_id is the application id.
@@ -326,11 +327,11 @@ class Satelite():
                     if self.error_callback is not None:
                         self.error_callback(line)
                     return ""
-            except:
-                raise
+            except Exception as e:
+                raise e
         finally:
             self.lock.release()
 
-    def last_rt_time(self) -> datetime:
+    def last_rt_time(self) -> str:
         """Last received test time (from swarm)."""
         return self.last_date
