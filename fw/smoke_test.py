@@ -1,5 +1,6 @@
 import unittest
 from Satelite import Satelite
+from UARTBluetooth import UARTBluetooth
 import uasyncio
 
 
@@ -127,3 +128,40 @@ class SateliteSmokeTest(unittest.TestCase):
         self.assertEqual(app_id, 120)
         self.assertEqual(msg_data, "1337DEADBEEF")
         self.assertEqual(msg_id, "1")
+
+
+class FakeBLE():
+    def __init__(self):
+        self.hanlder = None
+        self.services = None
+        self.name = None
+        self._active = None
+
+    def irq(self, handler):
+        self.hanlder = handler
+
+    def gatts_register_services(self, services):
+        self.services = services
+        return ((None, None), None)
+
+    def gatts_notify(self, conn_handle, value_handle, data):
+        return
+
+    def gap_advertise(self, interval, param, resp_data=None):
+        return
+
+    def active(self, act):
+        self._active = act
+
+    def config(self, gap_name=None):
+        self.name = gap_name
+
+
+class UARTSmokeTest(unittest.TestCase):
+
+    def test_construct(self):
+        print("Starting test.")
+        f = FakeBLE()
+        print(f"Made fake ble {f}")
+        b = UARTBluetooth("test", ble=f)
+        print(f"Created {b}")
