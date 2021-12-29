@@ -57,15 +57,15 @@ class UARTBluetooth():
                 # Negotiate MTU
                 self.ble.gattc_exchange_mtu()
                 uasyncio.create_task(self.client_ready_callback(True))
-            elif event == _IRQ_MTU_EXCHANGED:
+            elif event == 21:  # _IRQ_MTU_EXCHANGED:
                 # ATT MTU exchange complete (either initiated by us or the remote device).
                 conn_handle, self.mtu = data
-            elif event == 2:
+            elif event == 2:  # _IRQ_CENTRAL_DISCONNECT
                 # Disconnected
                 self.connected = False
                 self.advertise()
                 uasyncio.create_task(self.client_ready_callback(False))
-            elif event == 3:
+            elif event == 3:  # _IRQ_GATTS_WRITE
                 # msg received, note that BLE UART spec means msg data may be chunked
                 buffer = self.ble.gatts_read(self.rx)
                 if (self.target_length == 0):
@@ -133,7 +133,7 @@ class UARTBluetooth():
         SERVICES = (BLE_UART, )
         ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
 
-    def send(self, data: ByteString):
+    def send(self, data):
         # Send how many bytes were going to have
         self.ble.gatts_notify(0, self.tx, int.to_bytes(len(data), 'little'))
         # Send all of the bytes
