@@ -1,9 +1,49 @@
+# Import basic crypto stuff
+import hashlib
+
+try:
+    from ufastecdsa import curve, ecdsa, keys, util
+    get_bit_length = util.get_bit_length
+except ImportError:
+    from fastecdsa import curve, ecdsa, keys, util
+    get_bit_length = int.bit_length
+
+# Interactive testing hacks
+class FakeUART():
+    def __init__(self, lines=[]):
+        print(f"Making fake uart with lines {lines}")
+        self.baudrate = None
+        self.tx = None
+        self.rx = None
+        self.lines = lines
+        self.sent_lines = []
+        pass
+
+    def init(self, baudrate=0, tx=None, rx=None):
+        self.baudrate = baudrate
+        self.tx = tx
+        self.rx = rx
+
+    async def readline(self):
+        line = self.lines.pop(0)
+        print(f"Serving fake line {line}")
+        return line
+
+    def write(self, cmd):
+        print(f"Sendig fake line {cmd}")
+        self.sent_lines.append(cmd)
+
+    async def flush(self):
+        return True
+
+f = FakeUART()
+#from UARTBluetooth import UARTBluetooth
+#from Satelite import Satelite
+
 import machine
 from machine import Pin, SoftI2C
 import uasyncio
 import ssd1306
-from UARTBluetooth import UARTBluetooth
-from Satelite import Satelite
 import micropython
 
 micropython.alloc_emergency_exception_buf(400)
@@ -118,6 +158,6 @@ b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_t
                   client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
 s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
              error_callback=copy_error_to_ble, txing_callback=txing_callback,
-             ready_callback=modem_ready, client_ready=client_ready)
+             ready_callback=modem_ready, client_ready=client_ready, myconn=f)
 s.start()
-uasyncio.get_event_loop().run_until_complete()
+# uasyncio.get_event_loop().run_until_complete()

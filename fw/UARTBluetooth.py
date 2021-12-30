@@ -1,6 +1,8 @@
 import micropython
 import uasyncio
 
+_BMS_MTU = 128
+
 
 class UARTBluetooth():
 
@@ -55,7 +57,7 @@ class UARTBluetooth():
                 # Paired
                 self.connected = True
                 # Negotiate MTU
-                self.ble.gattc_exchange_mtu()
+                self.ble.gattc_exchange_mtu(_BMS_MTU)
                 uasyncio.create_task(self.client_ready_callback(True))
             elif event == 21:  # _IRQ_MTU_EXCHANGED:
                 # ATT MTU exchange complete (either initiated by us or the remote device).
@@ -134,8 +136,8 @@ class UARTBluetooth():
         ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
 
     def send(self, data):
-        # Send how many bytes were going to have
-        self.ble.gatts_notify(0, self.tx, int.to_bytes(len(data), 'little'))
+        # Send how many bytes were going to have, we always use 4 bytes to send this.
+        self.ble.gatts_notify(0, self.tx, int.to_bytes(len(data), 4, 'little'))
         # Send all of the bytes
         idx = 0
         while (idx < len(data)):
