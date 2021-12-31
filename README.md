@@ -44,7 +44,7 @@ For '?':
 Requests the current phone id / profile.
 
 For 'R':
-Raw modem command.
+Raw modem command, will be copied directly to the satelite modem.
 
 For 'F':
 Upload new firmware *for* the modem (to be stored on the ESP32 pending verification).
@@ -74,7 +74,7 @@ RAW {msg}
 When power reaches < 50%
 POWER {level as an int}
 
-#### Main loop
+### Main loop
 
 TODO:
 
