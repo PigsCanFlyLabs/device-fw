@@ -18,6 +18,7 @@ Most message types are blindly sent through
 
 Special consideration:
 1) when txing_pin from the modem is set to high the ESP32 *must* disable all TXing on BT/Wifi.
+(note this is not implemented yet).
 
 ### BTLE interface
 
