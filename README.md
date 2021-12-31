@@ -70,3 +70,12 @@ TODO:
 
 When receiving an otherwise unhandled message
 RAW {msg}
+
+When power reaches < 50%
+POWER {level as an int}
+
+#### Main loop
+
+TODO:
+
+Verify the signature of phone id using public key.

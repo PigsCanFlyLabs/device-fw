@@ -40,10 +40,11 @@ git fetch
 git checkout 
 git checkout "${MICRO_PYTHON_VERSION}"
 
-if [ ! -d cmodules ]; then
-  mkdir -p cmodules
-  git clone https://github.com/dmazzella/ucrypto.git cmodules/ucrypto
-fi
+# ucrypto doesn't party with esp32 right now :/
+#if [ ! -d cmodules ]; then
+#  mkdir -p cmodules
+#  git clone https://github.com/dmazzella/ucrypto.git cmodules/ucrypto
+#fi
 USER_C_MODULES="$(pwd)/cmodules"
 
 if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross/mpy-cross" ]; then
