@@ -8,6 +8,7 @@ class Satelite():
                  msg_acked_callback=None,
                  error_callback=None,
                  txing_callback=None,
+                 misc_callback=None,
                  txing_pin=None,
                  uart_tx=11,
                  uart_rx=12,
@@ -46,6 +47,7 @@ class Satelite():
         self.ready_callback = ready_callback
         self.client_ready = client_ready
         self.device_id = None
+        self.misc_callback = misc_callback
         print("Initilizing UART.")
         self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
         print("Initialized, making stream r/w.")
@@ -162,6 +164,9 @@ class Satelite():
             elif "ERR" in contents:
                 if self.error_callback is not None:
                     self.error_callback(raw_msg)
+        elif self.misc_callback is not None:
+                self.misc_callback(msg)
+
 
     async def _enable_msg_watch(self):
         self.send_command("$MM N=E")

@@ -97,10 +97,10 @@ class UARTBluetooth():
     def _handle_phone_buffer(self, buffer_veiw):
         try:
             if buffer_veiw[0] == 'M':
-                # Two bytes for message ID
-                msg_id = int.from_bytes(buffer_veiw[:2])
+                # Two bytes for app ID
+                app_id = int.from_bytes(buffer_veiw[1:3], 'little')
                 msg_str = buffer_veiw[3:].decode('UTF-8').strip()
-                uasyncio.create_task(self._msg_handle(msg_id, msg_str))
+                uasyncio.create_task(self._msg_handle(app_id, msg_str))
             elif buffer_veiw[0] == 'P':
                 buffer_veiw[1:].decode('UTF-8').strip()
                 uasyncio.create_task(self.set_phone_id_callback(msg_str))
