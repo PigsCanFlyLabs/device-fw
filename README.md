@@ -12,7 +12,9 @@ For the most part the interface to the satelite modem waits for the satelite mod
 
 ### Satelite interface
 
-The satelite interface is implemented according to https://swarm.space/wp-content/uploads/2021/11/Swarm-Hive-API-Integration-Guide.pdf?utm_source=google&utm_medium=cpc&utm_term=iot_satellite&utm_content=Ad_2&utm_campaign=Google_Search_Broad_NB_Satellite_US&gclid=CjwKCAiA1aiMBhAUEiwACw25MUVEAeBC9Aya0srzd70CdkbINKhBvqLUu0YiMLmKG4PBpcVlNlffuRoCOYUQAvD_BwE (e.g. Swarm Hive 1.3 API Integration Guide).
+The satelite interface is implemented according to
+https://swarm.space/wp-content/uploads/2021/12/Swarm-M138-Modem-Product-Manual.pdf?utm_source=google&utm_medium=cpc&utm_campaign=Google_Search_Broad_NB_Satellite_US&utm_term=iot_satellite&utm_content=Ad_2
+(e.g. Swarm M138 Modem Product Manual Revisioon 1.02)
 
 Most message types are blindly sent through 
 
