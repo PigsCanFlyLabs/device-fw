@@ -165,8 +165,9 @@ class Satelite():
                 if self.error_callback is not None:
                     self.error_callback(raw_msg)
         elif self.misc_callback is not None:
-                self.misc_callback(msg)
-
+            self.misc_callback(msg)
+        else:
+            print(f"Unhandled msg {msg} with no misc callback.")
 
     async def _enable_msg_watch(self):
         self.send_command("$MM N=E")
