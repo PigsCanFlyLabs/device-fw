@@ -40,13 +40,6 @@ git fetch
 git checkout 
 git checkout "${MICRO_PYTHON_VERSION}"
 
-# ucrypto doesn't party with esp32 right now :/
-#if [ ! -d cmodules ]; then
-#  mkdir -p cmodules
-#  git clone https://github.com/dmazzella/ucrypto.git cmodules/ucrypto
-#fi
-USER_C_MODULES="$(pwd)/cmodules"
-
 if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross/mpy-cross" ]; then
   pushd mpy-cross
   make
@@ -56,7 +49,7 @@ fi
 pushd ./ports/unix
 if [ ! -f "micorpython" ]; then
   make submodules &> submod
-  make USER_C_MODULES="${USER_C_MODULES}" &> base || (cat base; exit 1)
+  make &> base || (cat base; exit 1)
   export PATH="${PATH}:$(pwd)"
 fi
 popd
@@ -76,8 +69,8 @@ if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
 make submodules &> submod
-# make BOARD=GENERIC USER_C_MODULES="${USER_C_MODULES}" &> base
-make BOARD=GENERIC USER_C_MODULES="${USER_C_MODULES}" FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
+# make BOARD=GENERIC &> base
+make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
 pwd
 popd
 
