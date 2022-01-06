@@ -8,6 +8,7 @@ if [ ! -d "${build_dir}" ]; then
   mkdir "${build_dir}"
 fi
 pushd "${build_dir}"
+
 if [ ! -d "${venv_dir}" ]; then
   virtualenv  "${venv_dir}"
 fi
@@ -57,7 +58,7 @@ popd
 if [ ! -d "~/.micropython/lib/" ]; then
   mkdir -p ~/.micropython/lib
   cp -af ./extmod/* ~/.micropython/lib/
-  micropython -m upip install unittest
+  micropython -m upip install unittest logging threading typing warnings base64 hmac
 fi
 # Run some smoke tests
 pushd "${FW_DIR}"

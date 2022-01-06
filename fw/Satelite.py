@@ -8,8 +8,10 @@ class Satelite():
                  msg_acked_callback=None,
                  error_callback=None,
                  txing_callback=None,
+                 done_txing_callback=None,
                  misc_callback=None,
-                 txing_pin=None,
+                 tx_pin=None,
+                 rx_pin=None,
                  uart_tx=11,
                  uart_rx=12,
                  ready_callback=None,
@@ -22,7 +24,8 @@ class Satelite():
         msg_acked_callback takes a str of msgid
         error_callback takes a str of error string
         txing_callback takes bool for active TX or false for TX finished
-        txing_pin is an optional int for a pin to monitor for TXing
+        tx_pin is a pin to monitor for TXing
+        rx_pin is a pin to monitor for RXing
         uart_tx is the UART tx pin
         uart_rx is the UART rx pin
         ready_callback is a callback to indicate the modem can receive msgs
@@ -60,6 +63,11 @@ class Satelite():
         else:
             self.sreader = myconn
         print("Streams set up")
+        if tx_pin is not None and txing_callback is not None:
+            from machine import Pin
+            pin = Pin(tx_pin, Pin.IN, Pin.PULL_UP)
+            pin.irq(trigger=Pin.IRQ_RISING, handler=txing_callback)
+            pin.irq(trigger=Pin.IRQ_FALLING, handler=done_txing_callback)
 
     def start(self):
         print("Seting up satelite msg handler...")
@@ -341,3 +349,15 @@ class Satelite():
     def last_rt_time(self) -> str:
         """Last received test time (from swarm)."""
         return self.last_date
+
+    def sleep_until_rx_watch(self):
+        """Configure RX pin goes hi."""
+        try:
+            self.lock.acquire()
+            self.send_command("GP 6")
+            line = await self.sreader.readline()
+            while (not line.startswith("$GP")):
+                uasyncio.create_task(self._line_handle(line))
+                line = await self.sreader.readline()
+        finally:
+            self.lock.release()

@@ -51,6 +51,7 @@ global s
 global b
 global phone_id
 
+
 phone_id = None
 
 try:
@@ -91,12 +92,14 @@ def copy_error_to_ble(error: str) -> str:
     b.send_error(error)
 
 
-def txing_callback(modem_active: bool):
+def txing_callback():
     global b
-    if (modem_active):
-        b.disable()
-    else:
-        b.enable()
+    b.disable()
+
+
+def done_txing_callback():
+    global b
+    b.enable()
 
 
 def modem_ready():
@@ -119,6 +122,7 @@ b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_t
                   client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
 s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
              error_callback=copy_error_to_ble, txing_callback=txing_callback,
-             ready_callback=modem_ready, client_ready=client_ready)
+             done_txing_callback=done_txing_callback, ready_callback=modem_ready,
+             client_ready=client_ready)
 s.start()
 # uasyncio.get_event_loop().run_until_complete()
