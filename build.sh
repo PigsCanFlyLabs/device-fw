@@ -69,9 +69,10 @@ pushd "${MP_ROOT}/ports/esp32"
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
+cp -af "${BOARD_DIR}/*" ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
-make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
+make BOARD=SPACEBEAVER_C3 FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
 pwd
 popd
 
