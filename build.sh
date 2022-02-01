@@ -71,7 +71,7 @@ if [ ! -d "esp-idf" ]; then
 fi
 make submodules &> submod
 # make BOARD=GENERIC &> base
-make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
+make BOARD=GENERIC FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake" CFLAGS_EXTRA=-DMODULE_EXAMPLE_ENABLED=1 all
 pwd
 popd
 
