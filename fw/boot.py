@@ -67,7 +67,8 @@ async def set_phone_id(new_phone_id: str):
     with open("phone_id", "w") as p:
         p.write(phone_id)
 
-async def get_phone_id():
+async def get_device_id():
+    global s
     return s.device_id()
 
 async def copy_msg_to_sat_modem(msg: str) -> str:

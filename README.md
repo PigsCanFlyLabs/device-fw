@@ -44,6 +44,10 @@ No response.
 For 'Q':
 Query the device to determine if it's set up. If so returns `PHONEID: {phone_id}`, if not returns `ERROR: "{device_id}" not configured`.
 
+For 'D':
+
+Query the device ID, Returns deviceid.
+
 TODO:
 For '?':
 Requests the current phone id / profile.
