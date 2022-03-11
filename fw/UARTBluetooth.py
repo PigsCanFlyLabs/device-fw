@@ -7,7 +7,7 @@ _BMS_MTU = 128
 class UARTBluetooth():
 
     def __init__(self, name: str, display=None, msg_callback=None, ble=None,
-                 client_ready_callback=None, set_phone_id=None):
+                 client_ready_callback=None, set_phone_id=None, get_phone_id=None):
         """Initialize the UART BLE handler. For testing allows ble to be supplied."""
 
         self.name = name
@@ -105,8 +105,19 @@ class UARTBluetooth():
                 buffer_veiw[1:].decode('UTF-8').strip()
                 uasyncio.create_task(self.set_phone_id_callback(msg_str))
                 self.msg = []
+            elif buffer_veiw[0] == 'Q':
+                uasyncio.create_task(self._get_phone_id())
+            elif buffer_veiw[0] == 'R':
+                uasyncio.create_task(self._get_device_id())
         finally:
             self.ready = True
+
+    async def _get_phone_id():
+        global phone_id
+        if phone_id is None:
+            self.send(f"ERROR: \"{await get_device_id()}\" not configured.")
+        else:
+            self.send(f"PHONEID: {phone_id}")
 
     async def _msg_handle(self, completed_msg):
         if self.msg_callback is not None:

@@ -67,6 +67,8 @@ async def set_phone_id(new_phone_id: str):
     with open("phone_id", "w") as p:
         p.write(phone_id)
 
+async def get_phone_id():
+    return s.device_id()
 
 async def copy_msg_to_sat_modem(msg: str) -> str:
     global s
@@ -119,7 +121,8 @@ def client_ready_callback(flag: bool):
 
 
 b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem,
-                  client_ready_callback=client_ready_callback, set_phone_id=set_phone_id)
+                  client_ready_callback=client_ready_callback, set_phone_id=set_phone_id,
+                  get_device_id=get_device_id)
 s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
              error_callback=copy_error_to_ble, txing_callback=txing_callback,
              done_txing_callback=done_txing_callback, ready_callback=modem_ready,

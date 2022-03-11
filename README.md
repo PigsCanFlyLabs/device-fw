@@ -38,8 +38,11 @@ the remainder of the message is a UTF-8 encoded string which will be relayed to 
 For clarity the client _should not_ send another message until after the message is ackd with eather "MSGID: {id}" or "ERROR: ..."
 
 For 'P':
-The message represents a phone id / profile.
+The message sets a phone id / profile.
 No response.
+
+For 'Q':
+Query the device to determine if it's set up. If so returns `PHONEID: {phone_id}`, if not returns `ERROR: "{device_id}" not configured`.
 
 TODO:
 For '?':
