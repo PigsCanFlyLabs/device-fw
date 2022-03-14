@@ -114,14 +114,14 @@ class UARTBluetooth():
         finally:
             self.ready = True
 
-    async def _get_phone_id():
+    async def _get_phone_id(self):
         global phone_id
         if phone_id is None:
             self.send(f"ERROR: \"{await self.get_device_id()}\" not configured.")
         else:
             self.send(f"PHONEID: {phone_id}")
 
-    async def _get_device_id():
+    async def _get_device_id(self):
         self.send(f"{await self.get_device_id()}")
 
     async def _msg_handle(self, completed_msg):
