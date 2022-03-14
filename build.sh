@@ -37,8 +37,8 @@ fi
 pushd micropython
 MP_ROOT=$(pwd)
 
-git fetch
-git checkout 
+git fetch || echo "No internet, not updating."
+git checkout
 git checkout "${MICRO_PYTHON_VERSION}"
 
 if [ ! -f "${build_dir}/microPython/project/micropython/mpy-cross/mpy-cross" ]; then
