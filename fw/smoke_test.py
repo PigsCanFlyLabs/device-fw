@@ -11,11 +11,13 @@ class TestStringMethods(unittest.TestCase):
 
 
 class FakeUART():
-    def __init__(self, lines=[]):
+    def __init__(self, lines=None):
         print(f"Making fake uart with lines {lines}")
         self.baudrate = None
         self.tx = None
         self.rx = None
+        if lines is None:
+            lines = []
         self.lines = lines
         self.sent_lines = []
         pass

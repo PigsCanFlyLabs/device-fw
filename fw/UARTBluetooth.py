@@ -157,7 +157,7 @@ class UARTBluetooth():
         # Send all of the bytes
         idx = 0
         while (idx < len(data)):
-            self.ble.gatts_notify(0, self.tx, data[idx:idx+self.mtu])
+            self.ble.gatts_notify(0, self.tx, data[idx:idx + self.mtu])
             idx = idx + self.mtu
 
     def send_msg(self, app_id: str, msg: str):

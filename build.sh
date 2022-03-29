@@ -2,8 +2,10 @@
 
 source common.sh
 
-MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-v1.17}
-ESP_IDF_VERSION="v4.3.2"
+#MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-v1.18}
+# Needed to use 4.4 -- see https://github.com/micropython/micropython/issues/8277
+MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-master}
+ESP_IDF_VERSION="v4.4"
 if [ ! -d "${build_dir}" ]; then
   mkdir "${build_dir}"
 fi
@@ -55,14 +57,14 @@ if [ ! -f "micorpython" ]; then
 fi
 popd
 # Make uasyncio available for testing on unix port
-if [ ! -d "~/.micropython/lib/" ]; then
+if [ ! -d ~/.micropython/lib/ ]; then
   mkdir -p ~/.micropython/lib
   cp -af ./extmod/* ~/.micropython/lib/
   micropython -m upip install unittest logging threading typing warnings base64 hmac
 fi
 # Run some smoke tests
 pushd "${FW_DIR}"
-flake8 --max-line-length 100
+flake8 --max-line-length 100 --ignore=Q000 --exclude=manifest.py
 micropython -c "import unittest;unittest.main('smoke_test')"
 popd
 pushd "${MP_ROOT}/ports/esp32"
@@ -72,7 +74,8 @@ fi
 cp -af "${BOARD_DIR}/"* ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
-make BOARD=SPACEBEAVER_C3 FROZEN_MPY_DIR="${SCRIPT_DIR}/fw/*.py"
+make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
+make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py"
 pwd
 popd
 
