@@ -48,53 +48,57 @@ class UARTBluetooth():
 
     def ble_irq(self, event: int, data):
         """Handle BlueTooth Event."""
+        print(f"Handling {event} {data}")
         if self.display is not None:
             self.display.fill(0)
             self.display.text(str(event), 0, 5)
             self.display.text(str(data), 0, 20)
             print(str(event))
             print(str(data))
-            # Handle bluetooth events
-            if event == 1:
-                # Paired
-                self.connected = True
-                # Negotiate MTU
+        # Handle bluetooth events
+        if event == 1:
+            # Paired
+            self.connected = True
+            # Negotiate MTU
+            try:
                 self.ble.gattc_exchange_mtu(_BMS_MTU)
-                uasyncio.create_task(self.client_ready_callback(True))
-            elif event == 21:  # _IRQ_MTU_EXCHANGED:
-                # ATT MTU exchange complete (either initiated by us or the remote device).
-                conn_handle, self.mtu = data
-            elif event == 2:  # _IRQ_CENTRAL_DISCONNECT
-                # Disconnected
-                self.connected = False
-                self.advertise()
-                uasyncio.create_task(self.client_ready_callback(False))
-            elif event == 3:  # _IRQ_GATTS_WRITE
-                # msg received, note that BLE UART spec means msg data may be chunked
-                buffer = self.ble.gatts_read(self.rx)
-                if (self.target_length == 0):
-                    # Little endian like x86
-                    self.target_length = int.from_bytes(buffer, 'little')
-                    print(f"Setting target length to {self.target_length}")
-                    return
-                # If we're still processing the last message ask the client to repeat it.
-                if not self.ready:
-                    self.send("REPEAT")
-                self.target_length -= len(buffer)
-                new_end = self.msg_buffer_idx + len(buffer)
-                self.msg_buffer[self.msg_buffer_idx:new_end] = buffer
-                if self.target_length == 0:
-                    # Use mv_msg_buffer to avoid allocation
-                    micropython.schedule(self._handle_phone_buffer, self.mv_msg_buffer[:new_end])
-                elif self.target_length < 0:
-                    self.msg_buffer_idx = 0
-                    # Error
-                    e = "ERROR: INVALID MSG LEN"
-                    self.send(e)
-                    self.target_length = 0
-                else:
-                    self.msg_buffer_idx = new_end
-                    print(f"Waiting for {self.target_length} more chars.")
+            except Exception as e:
+                print(f"Error negotiating MTU {e}")
+            uasyncio.create_task(self.client_ready_callback(True))
+        elif event == 21:  # _IRQ_MTU_EXCHANGED:
+            # ATT MTU exchange complete (either initiated by us or the remote device).
+            conn_handle, self.mtu = data
+        elif event == 2:  # _IRQ_CENTRAL_DISCONNECT
+            # Disconnected
+            self.connected = False
+            self.advertise()
+            uasyncio.create_task(self.client_ready_callback(False))
+        elif event == 3:  # _IRQ_GATTS_WRITE
+            # msg received, note that BLE UART spec means msg data may be chunked
+            buffer = self.ble.gatts_read(self.rx)
+            if (self.target_length == 0):
+                # Little endian like x86
+                self.target_length = int.from_bytes(buffer, 'little')
+                print(f"Setting target length to {self.target_length}")
+                return
+            # If we're still processing the last message ask the client to repeat it.
+            if not self.ready:
+                self.send("REPEAT")
+            self.target_length -= len(buffer)
+            new_end = self.msg_buffer_idx + len(buffer)
+            self.msg_buffer[self.msg_buffer_idx:new_end] = buffer
+            if self.target_length == 0:
+                # Use mv_msg_buffer to avoid allocation
+                micropython.schedule(self._handle_phone_buffer, self.mv_msg_buffer[:new_end])
+            elif self.target_length < 0:
+                self.msg_buffer_idx = 0
+                # Error
+                e = "ERROR: INVALID MSG LEN"
+                self.send(e)
+                self.target_length = 0
+            else:
+                self.msg_buffer_idx = new_end
+                print(f"Waiting for {self.target_length} more chars.")
 
     def _handle_phone_buffer(self, buffer_veiw):
         try:
@@ -180,6 +184,7 @@ class UARTBluetooth():
             resp_data=bytearray('\x02\x01\x02') + bytearray((len(name) + 1, 0x09)) + name)
 
     def advertise(self):
+        print(f"Advertising {self.name}")
         name = bytes(self.name, 'UTF-8')
         self.ble.gap_advertise(
             100,

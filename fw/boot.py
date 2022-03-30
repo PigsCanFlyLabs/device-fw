@@ -5,6 +5,7 @@ import machine
 from machine import Pin, SoftI2C
 import ssd1306
 import micropython
+from test_utils import FakeUART
 
 print("booting...")
 default_freq = machine.freq
@@ -119,22 +120,47 @@ client_ready = uasyncio.ThreadSafeFlag()
 def client_ready_callback(flag: bool):
     if flag:
         client_ready.set()
-    else:
-        client_ready.clear()
 
 
-b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem,
-                  client_ready_callback=client_ready_callback, set_phone_id=set_phone_id,
-                  get_device_id=get_device_id)
-s = Satelite(1, new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
-             error_callback=copy_error_to_ble, txing_callback=txing_callback,
-             done_txing_callback=done_txing_callback, ready_callback=modem_ready,
-             client_ready=client_ready)
+print("Creating bluetooth and satelite.")
+
+try:
+    b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem,
+                      client_ready_callback=client_ready_callback, set_phone_id=set_phone_id,
+                      get_device_id=get_device_id)
+except Exception as e:
+    print(f"Couldnt create btle {e}")
+
+
+conn = FakeUART(lines=[
+    "butts",
+    "$M138 DATETIME*35",
+    "$MM 120,1337DEADBEEF,1,1*39"])
+
+try:
+    s = Satelite(1,
+                 # Testing hack
+                 myconn=conn,
+                 new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
+                 error_callback=copy_error_to_ble, txing_callback=txing_callback,
+                 done_txing_callback=done_txing_callback, ready_callback=modem_ready,
+                 client_ready=client_ready)
+except Exception as e:
+    print(f"Couldnt create satelite UART {e}")
 
 
 print("Hi!")
 print("Running!")
-s.start()
+
+try:
+    s.start()
+except Exception as e:
+    print(f"Couldnt start satelite comm {e}")
+
 while True:
-    uasyncio.get_event_loop().run_until_complete()
-    print("Event loop complete?")
+    try:
+        event_loop = uasyncio.get_event_loop()
+        event_loop.run_forever()
+        print("Event loop complete?")
+    except Exception as e:
+        print(f"Error {e} running event loop.")

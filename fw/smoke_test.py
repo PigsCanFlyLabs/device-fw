@@ -2,42 +2,13 @@ import unittest
 from Satelite import Satelite
 from UARTBluetooth import UARTBluetooth
 import uasyncio
+from test_utils import FakeUART
 
 
 class TestStringMethods(unittest.TestCase):
 
     def test_upper(self):
         self.assertEqual('foo'.upper(), 'FOO')
-
-
-class FakeUART():
-    def __init__(self, lines=None):
-        print(f"Making fake uart with lines {lines}")
-        self.baudrate = None
-        self.tx = None
-        self.rx = None
-        if lines is None:
-            lines = []
-        self.lines = lines
-        self.sent_lines = []
-        pass
-
-    def init(self, baudrate=0, tx=None, rx=None):
-        self.baudrate = baudrate
-        self.tx = tx
-        self.rx = rx
-
-    async def readline(self):
-        line = self.lines.pop(0)
-        print(f"Serving fake line {line}")
-        return line
-
-    def write(self, cmd):
-        print(f"Sendig fake line {cmd}")
-        self.sent_lines.append(cmd)
-
-    async def flush(self):
-        return True
 
 
 class SateliteSmokeTest(unittest.TestCase):

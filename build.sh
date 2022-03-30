@@ -74,7 +74,7 @@ fi
 cp -af "${BOARD_DIR}/"* ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
-make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
+# make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
 make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py"
 pwd
 popd
