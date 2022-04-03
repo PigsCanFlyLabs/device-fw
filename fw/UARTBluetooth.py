@@ -14,6 +14,9 @@ class UARTBluetooth():
         self.name = name
         if ble is None:
             import ubluetooth
+            import mac_setup
+            global mac_bits
+            mac_setup.mac_setup(mac_bits)
             self.ble = ubluetooth.BLE()
         else:
             self.ble = ble
@@ -39,6 +42,7 @@ class UARTBluetooth():
     def enable(self):
         self.ble.config(gap_name=self.name)
         self.ble.active(True)
+        print(f"BLE MAC address is {self.ble.config('mac')}")
         self.ble.config(gap_name=self.name)
 
     def disable(self):

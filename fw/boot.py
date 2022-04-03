@@ -51,7 +51,16 @@ def find_display():
 global s
 global b
 global phone_id
+global mac_bits
 
+try:
+    with open("mac_bits", "r") as m:
+        mac_bits = m.read(3)
+except Exception:
+    import random
+    mac_bits = random.getrandbits(8 * 3)
+    with open("mac_bits", "w") as m:
+        m.write(mac_bits)
 
 phone_id = None
 
