@@ -97,6 +97,7 @@ class UARTBluetooth():
             new_end = self.msg_buffer_idx + len(buffer)
             self.msg_buffer[self.msg_buffer_idx:new_end] = buffer
             if self.target_length == 0:
+                print("Scheduling handle phone buffer to process message.")
                 # Use mv_msg_buffer to avoid allocation
                 micropython.schedule(self._handle_phone_buffer, self.mv_msg_buffer[:new_end])
             elif self.target_length < 0:
@@ -111,19 +112,22 @@ class UARTBluetooth():
 
     def _handle_phone_buffer(self, buffer_veiw):
         try:
-            if buffer_veiw[0] == 'M':
+            command = chr(buffer_veiw[0])
+            if command == 'M':
                 # Two bytes for app ID
                 app_id = int.from_bytes(buffer_veiw[1:3], 'little')
-                msg_str = buffer_veiw[3:].decode('UTF-8').strip()
+                msg_str = str(buffer_veiw[3:], 'utf8').strip()
                 uasyncio.create_task(self._msg_handle(app_id, msg_str))
-            elif buffer_veiw[0] == 'P':
-                buffer_veiw[1:].decode('UTF-8').strip()
+            elif command == 'P':
+                msg_str = str(buffer_veiw[1:], 'utf8').strip()
                 uasyncio.create_task(self.set_phone_id_callback(msg_str))
                 self.msg = []
-            elif buffer_veiw[0] == 'Q':
+            elif command == 'Q':
                 uasyncio.create_task(self._get_phone_id())
-            elif buffer_veiw[0] == 'D':
+            elif command == 'D':
                 uasyncio.create_task(self._get_device_id())
+            else:
+                print(f"IDK what to do with {command}")
         finally:
             self.ready = True
 
