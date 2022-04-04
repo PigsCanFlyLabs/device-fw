@@ -14,9 +14,14 @@ class UARTBluetooth():
         self.name = name
         if ble is None:
             import ubluetooth
-            import mac_setup
-            global mac_bits
-            mac_setup.mac_setup(mac_bits)
+            try:
+                import mac_setup
+                mac_bits = 1
+                print(dir(mac_setup))
+                mac_setup.setup(mac_bits)
+            except Exception as e:
+                print(help('modules'))
+                print(f"Weird error {e} trying to configure MAC prefix, will use ESP32 prefix")
             self.ble = ubluetooth.BLE()
         else:
             self.ble = ble
@@ -68,7 +73,7 @@ class UARTBluetooth():
                 self.ble.gattc_exchange_mtu(_BMS_MTU)
             except Exception as e:
                 print(f"Error negotiating MTU {e}")
-            uasyncio.create_task(self.client_ready_callback(True))
+            self.client_ready_callback(True)
         elif event == 21:  # _IRQ_MTU_EXCHANGED:
             # ATT MTU exchange complete (either initiated by us or the remote device).
             conn_handle, self.mtu = data
@@ -76,7 +81,7 @@ class UARTBluetooth():
             # Disconnected
             self.connected = False
             self.advertise()
-            uasyncio.create_task(self.client_ready_callback(False))
+            self.client_ready_callback(False)
         elif event == 3:  # _IRQ_GATTS_WRITE
             # msg received, note that BLE UART spec means msg data may be chunked
             buffer = self.ble.gatts_read(self.rx)

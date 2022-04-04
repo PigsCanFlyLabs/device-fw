@@ -75,7 +75,8 @@ cp -af "${BOARD_DIR}/"* ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
 # make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
-make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py"  USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake" CFLAGS_EXTRA=-DMODULE_MAC_SETUP_ENABLED=1 all
+make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
 pwd
 popd
 
