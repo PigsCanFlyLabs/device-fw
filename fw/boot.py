@@ -7,7 +7,11 @@ import ssd1306
 import micropython
 from test_utils import FakeUART
 
-print("booting...")
+print("Allocating buffer for ISR failure..")
+micropython.alloc_emergency_exception_buf(100)
+
+
+print("Finding target machine frequency.")
 default_freq = machine.freq
 
 
@@ -50,7 +54,6 @@ def find_display():
 
 global s
 global b
-global phone_id
 
 phone_id = None
 
@@ -62,11 +65,22 @@ except Exception as e:
 
 
 async def set_phone_id(new_phone_id: str):
-    global phone_id
+    print("Hi!")
+    print("Setting phone id.")
     phone_id = new_phone_id
     with open("phone_id", "w") as p:
         p.write(phone_id)
+        print(f"Set phone id to {phone_id}")
 
+async def get_phone_id():
+    if phone_id is None:
+        try:
+            with open("phone_id", "r") as p:
+                phone_id = p.readline()
+        except Exception as e:
+            print(f"Couldnt read phone id {e}")
+    return phone_id
+        
 
 async def get_device_id():
     global s
@@ -117,8 +131,10 @@ client_ready = uasyncio.ThreadSafeFlag()
 
 
 def client_ready_callback(flag: bool):
+    print(f"Called for client ready with flag {flag}")
     if flag:
         client_ready.set()
+        print("Set client to ready :)")
 
 
 print("Creating bluetooth and satelite.")
@@ -156,10 +172,22 @@ try:
 except Exception as e:
     print(f"Couldnt start satelite comm {e}")
 
+
+# See the discussion in https://github.com/micropython/micropython/issues/6415
+async def always_busy():
+    while True:
+#        print("Hi..")
+        await uasyncio.sleep(0)
+
+uasyncio.create_task(always_busy())
+
 while True:
     try:
+        print("Starting event loop...")
         event_loop = uasyncio.get_event_loop()
         event_loop.run_forever()
         print("Event loop complete?")
+        import time
+        time.sleep(5)
     except Exception as e:
         print(f"Error {e} running event loop.")

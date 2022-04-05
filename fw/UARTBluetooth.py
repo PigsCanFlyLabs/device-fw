@@ -8,6 +8,7 @@ class UARTBluetooth():
 
     def __init__(self, name: str, display=None, msg_callback=None, ble=None,
                  client_ready_callback=None, set_phone_id=None,
+                 get_phone_id=None,
                  get_device_id=None):
         """Initialize the UART BLE handler. For testing allows ble to be supplied."""
 
@@ -32,12 +33,18 @@ class UARTBluetooth():
         self.target_length = 0
         self.mtu = 10
         self.client_ready_callback = client_ready_callback
-        self.set_phone_id_callback = set_phone_id
+        self.set_phone_id_callback_ref = set_phone_id
         self.msg_buffer = bytearray(1000)
         self.mv_msg_buffer = memoryview(self.msg_buffer)
         self.msg_buffer_idx = 0
         self.ready = True
+        self.get_phone_id = get_phone_id
         self.get_device_id = get_device_id
+        # We need to avoid allocs in the IRQ
+        # (see https://docs.micropython.org/en/latest/reference/isr_rules.html?highlight=isr)
+        self._get_phone_id_ref = self._get_phone_id
+        self._get_device_id_ref = self._get_device_id
+        self._msg_handle_ref = self._msg_handle
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
         if ble is None:
@@ -58,6 +65,7 @@ class UARTBluetooth():
     def ble_irq(self, event: int, data):
         """Handle BlueTooth Event."""
         print(f"Handling {event} {data}")
+        print(f"DEBUG: Current event loop task is {uasyncio.current_task()}")
         if self.display is not None:
             self.display.fill(0)
             self.display.text(str(event), 0, 5)
@@ -89,6 +97,9 @@ class UARTBluetooth():
                 # Little endian like x86
                 self.target_length = int.from_bytes(buffer, 'little')
                 print(f"Setting target length to {self.target_length}")
+                # Wrap the buffer if needed.
+                if self.target_length + self.msg_buffer_idx >= len(buffer):
+                    self.msg_buffer_idx = 0
                 return
             # If we're still processing the last message ask the client to repeat it.
             if not self.ready:
@@ -107,32 +118,36 @@ class UARTBluetooth():
                 self.send(e)
                 self.target_length = 0
             else:
-                self.msg_buffer_idx = new_end
+                self.msg_buffer_idx = new_end + 1
                 print(f"Waiting for {self.target_length} more chars.")
+            return True
 
     def _handle_phone_buffer(self, buffer_veiw):
         try:
             command = chr(buffer_veiw[0])
+            print(f"Handling command {command}")
             if command == 'M':
                 # Two bytes for app ID
                 app_id = int.from_bytes(buffer_veiw[1:3], 'little')
                 msg_str = str(buffer_veiw[3:], 'utf8').strip()
-                uasyncio.create_task(self._msg_handle(app_id, msg_str))
+                uasyncio.create_task(self._msg_handle_ref(app_id, msg_str))
             elif command == 'P':
                 msg_str = str(buffer_veiw[1:], 'utf8').strip()
-                uasyncio.create_task(self.set_phone_id_callback(msg_str))
-                self.msg = []
+                print(f"Setting phone id to {msg_str}")
+                uasyncio.run(self.set_phone_id_callback_ref(msg_str))
+                print("Task created :)")
             elif command == 'Q':
-                uasyncio.create_task(self._get_phone_id())
+                uasyncio.create_task(self._get_phone_id_ref())
             elif command == 'D':
-                uasyncio.create_task(self._get_device_id())
+                uasyncio.create_task(self._get_device_id_ref())
             else:
                 print(f"IDK what to do with {command}")
+            print("Done!")
         finally:
             self.ready = True
 
     async def _get_phone_id(self):
-        global phone_id
+        phone_id = await self.get_phone_id()
         if phone_id is None:
             self.send(f"ERROR: \"{await self.get_device_id()}\" not configured.")
         else:

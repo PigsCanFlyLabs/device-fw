@@ -17,7 +17,8 @@ class Satelite():
                  ready_callback=None,
                  client_ready=None,
                  max_retries=-1,
-                 myconn=None):
+                 myconn=None,
+                 delay=30):
         """Initialize a connection to the satelite modem. Allows setting myconn for testing.
         uart_id is the ID of the uart controller to use
         new_msg_callback should take app_id (str) and data (str, base64 encoded)
@@ -30,6 +31,7 @@ class Satelite():
         uart_rx is the UART rx pin
         ready_callback is a callback to indicate the modem can receive msgs
         client_ready is a ThreadSafeFlag of when the client is ready.
+        max_retries the number of retries at each level of retrying.
         """
         print("Constructing connection to M138.")
         if myconn is None:
@@ -51,6 +53,7 @@ class Satelite():
         self.client_ready = client_ready
         self.device_id = None
         self.misc_callback = misc_callback
+        self.delay = delay
         print("Initilizing UART.")
         self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
         print("Initialized, making stream r/w.")
@@ -81,29 +84,45 @@ class Satelite():
         retries = 0
         print("Sat modem started, entering main loop.")
         while self.max_retries == -1 or retries < self.max_retries:
-            print("Waiting for client to become ready...")
+            print("Waiting for phone client to become ready...")
             await self.client_ready.wait()
+            print("Phone client ready!")
             self.ready = True
             if self.ready_callback is not None:
                 self.ready_callback()
-            print("ready callback done.")
-            await self.read_all_msgs()
-            print("all queued msgs read.")
-            await self._enable_msg_watch()
-            print("msg watch enabled.")
             try:
-                while True:
-                    line = await self.sreader.readline()
-                    await self._line_handle(line)
-                    await uasyncio.sleep(1)
+                print("ready callback done.")
+                await self.read_all_msgs()
+                print("all queued msgs read.")
+                await self._enable_msg_watch()
+                print("msg watch enabled.")
+                print(f"Yeee-haw {retries} in.")
+                await uasyncio.sleep(self.delay)
+                line = None
+                line_retries = 0
+                # Seperate out reading from the satelite it's self
+                while line is None and line_retries < 3:
+                    try:
+                        line = await self.sreader.readline()
+                    except Exception as e:
+                        print(f"Error reading from satelite device... {e} attempt {line_retries}")
+                        line_retries = line_retries + 1
+                        await uasyncio.sleep(self.delay * line_retries)
+                        if line_retries >= 2:
+                            print(f"Re-raising error {e}")
+                            raise e
+                await self._line_handle(line)
+                await uasyncio.sleep(1)
+            # Error processing a msg from the satelite modem.
             except Exception as e:
                 # If we encounter an error validate that the client is still connected
                 self.ready = False
                 print(f"Error in main loop {e}")
                 await self._disable_msg_watch()
-                await self.client_ready.wait()
+                await uasyncio.sleep(self.delay * retries)
                 retries = retries + 1
-        print(f"Finishing main loop with {retries} retries")
+                print(f"Retries in main sat loop is now {retries}")
+        print(f"Finishing main satelite loop with {retries} retries")
 
     async def _modem_ready(self):
         """Handle messages waiting for system to boot."""
