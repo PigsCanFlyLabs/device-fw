@@ -1,5 +1,6 @@
 import micropython
 import uasyncio
+from display_wrapper import DisplayWrapper
 
 _BMS_MTU = 128
 
@@ -27,9 +28,11 @@ class UARTBluetooth():
         else:
             self.ble = ble
         self.stop_advertise()
+        self.services = ()
+        self.conn_handle = 0
         self.enable()
         self.connected = False
-        self.display = display
+        self.display = DisplayWrapper(display)
         self.target_length = 0
         self.mtu = 10
         self.client_ready_callback = client_ready_callback
@@ -66,27 +69,34 @@ class UARTBluetooth():
         """Handle BlueTooth Event."""
         print(f"Handling {event} {data}")
         print(f"DEBUG: Current event loop task is {uasyncio.current_task()}")
-        if self.display is not None:
-            self.display.fill(0)
-            self.display.text(str(event), 0, 5)
-            self.display.text(str(data), 0, 20)
-            print(str(event))
-            print(str(data))
+        print(f"DEBUG: state: {uasyncio.current_task().state}")
+        print(str(event))
+        print(str(data))
         # Handle bluetooth events
         if event == 1:
             # Paired
+            self.display.write("Connected!")
             self.connected = True
+            conn_handle, _, _ = data
+            self.conn_handle = conn_handle
             # Negotiate MTU
             try:
                 self.ble.gattc_exchange_mtu(_BMS_MTU)
             except Exception as e:
                 print(f"Error negotiating MTU {e}")
+                try:
+                    self.ble.gattc_exchange_mtu(int(_BMS_MTU / 2))
+                except Exception as e:
+                    print(f"Error negotiating MTU {e}")
+
             self.client_ready_callback(True)
         elif event == 21:  # _IRQ_MTU_EXCHANGED:
             # ATT MTU exchange complete (either initiated by us or the remote device).
             conn_handle, self.mtu = data
         elif event == 2:  # _IRQ_CENTRAL_DISCONNECT
             # Disconnected
+            if self.display is not None:
+                self.display.write("Phone disconnected, turn off if done :)")
             self.connected = False
             self.advertise()
             self.client_ready_callback(False)
@@ -96,7 +106,6 @@ class UARTBluetooth():
             if (self.target_length == 0):
                 # Little endian like x86
                 self.target_length = int.from_bytes(buffer, 'little')
-                print(f"Setting target length to {self.target_length}")
                 # Wrap the buffer if needed.
                 if self.target_length + self.msg_buffer_idx >= len(buffer):
                     self.msg_buffer_idx = 0
@@ -108,7 +117,6 @@ class UARTBluetooth():
             new_end = self.msg_buffer_idx + len(buffer)
             self.msg_buffer[self.msg_buffer_idx:new_end] = buffer
             if self.target_length == 0:
-                print("Scheduling handle phone buffer to process message.")
                 # Use mv_msg_buffer to avoid allocation
                 micropython.schedule(self._handle_phone_buffer, self.mv_msg_buffer[:new_end])
             elif self.target_length < 0:
@@ -119,7 +127,6 @@ class UARTBluetooth():
                 self.target_length = 0
             else:
                 self.msg_buffer_idx = new_end + 1
-                print(f"Waiting for {self.target_length} more chars.")
             return True
 
     def _handle_phone_buffer(self, buffer_veiw):
@@ -127,18 +134,22 @@ class UARTBluetooth():
             command = chr(buffer_veiw[0])
             print(f"Handling command {command}")
             if command == 'M':
+                self.display.write("Sending msg to modem")
                 # Two bytes for app ID
                 app_id = int.from_bytes(buffer_veiw[1:3], 'little')
                 msg_str = str(buffer_veiw[3:], 'utf8').strip()
                 uasyncio.create_task(self._msg_handle_ref(app_id, msg_str))
             elif command == 'P':
+                self.display.write("Configuring modem profile.")
                 msg_str = str(buffer_veiw[1:], 'utf8').strip()
                 print(f"Setting phone id to {msg_str}")
-                uasyncio.run(self.set_phone_id_callback_ref(msg_str))
+                uasyncio.create_task(self.set_phone_id_callback_ref(msg_str))
                 print("Task created :)")
             elif command == 'Q':
+                self.display.write("Fetching phone id")
                 uasyncio.create_task(self._get_phone_id_ref())
             elif command == 'D':
+                self.display.write("Fetching device id")
                 uasyncio.create_task(self._get_device_id_ref())
             else:
                 print(f"IDK what to do with {command}")
@@ -148,6 +159,7 @@ class UARTBluetooth():
 
     async def _get_phone_id(self):
         phone_id = await self.get_phone_id()
+        print(f"Got phone id {phone_id}")
         if phone_id is None:
             self.send(f"ERROR: \"{await self.get_device_id()}\" not configured.")
         else:
@@ -163,7 +175,7 @@ class UARTBluetooth():
                 self.send(f"MSGID: {id}")
             except Exception as e:
                 self.send(f"ERROR: sat modem error {e}")
-            self.display.text(str("".join(self.msg)), 0, 40)
+            self.display.write(str("".join(self.msg)))
             self.display.show()
 
     def register(self):
@@ -181,18 +193,23 @@ class UARTBluetooth():
 
         BLE_UART = (BLE_NUS, (BLE_TX, BLE_RX,))
         SERVICES = (BLE_UART, )
+        self.services = SERVICES
         ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
+        rxbuf = 500
+        self.ble.gatts_set_buffer(self.rx, rxbuf, True)
 
     def send(self, data):
+        print(f"Preparing to send {data} to UART BTLE.")
         # Send how many bytes were going to have, we always use 4 bytes to send this.
-        self.ble.gatts_notify(0, self.tx, int.to_bytes(len(data), 4, 'little'))
+        self.ble.gatts_notify(self.conn_handle, self.tx, int.to_bytes(len(data), 4, 'little'))
         # Send all of the bytes
         idx = 0
         while (idx < len(data)):
-            self.ble.gatts_notify(0, self.tx, data[idx:idx + self.mtu])
+            self.ble.gatts_notify(self.conn_handle, self.tx, data[idx:idx + self.mtu])
             idx = idx + self.mtu
 
     def send_msg(self, app_id: str, msg: str):
+        self.display("Loading msg from satelites")
         self.send(f"MSG {app_id} {msg}")
 
     def send_error(self, error):
@@ -205,16 +222,70 @@ class UARTBluetooth():
         self.send(f"ACK {msgid}")
 
     def stop_advertise(self):
-        name = bytes(self.name, 'UTF-8')
-        self.ble.gap_advertise(
-            None,
-            bytearray('\x02\x01\x02') + bytearray((len(name) + 1, 0x09)) + name,
-            resp_data=bytearray('\x02\x01\x02') + bytearray((len(name) + 1, 0x09)) + name)
+        self.ble.gap_advertise(None, b'')
 
     def advertise(self):
         print(f"Advertising {self.name}")
-        name = bytes(self.name, 'UTF-8')
+        from micropython import const
+        import struct
+        device_type = 5184  # Generic outdoor
+        # Generate a payload to be passed to gap_advertise(adv_data=...).
+        # From:
+        # https://github.com/micropython/micropython/blob/master/examples/bluetooth/
+        # This is MIT licensed.
+
+        def advertising_payload(limited_disc=False, br_edr=False, name=None, services=None,
+                                appearance=0):
+            _ADV_TYPE_FLAGS = const(0x01)
+            _ADV_TYPE_NAME = const(0x09)
+            _ADV_TYPE_UUID16_COMPLETE = const(0x3)
+            _ADV_TYPE_UUID32_COMPLETE = const(0x5)
+            _ADV_TYPE_UUID128_COMPLETE = const(0x7)
+            _ADV_TYPE_APPEARANCE = const(0x19)
+
+            payload = bytearray()
+
+            def _append(adv_type, value):
+                nonlocal payload
+                payload += struct.pack("BB", len(value) + 1, adv_type) + value
+
+            _append(
+                _ADV_TYPE_FLAGS,
+                struct.pack("B", (0x01 if limited_disc else 0x02) + (0x18 if br_edr else 0x04)),
+            )
+
+            if name:
+                _append(_ADV_TYPE_NAME, name)
+
+            if services:
+                for uuid in services:
+                    print(f"Services {uuid} in {services}")
+                    # Return here and fix the cast issue.
+                    b = bytes(uuid)
+                    if len(b) == 2:
+                        _append(_ADV_TYPE_UUID16_COMPLETE, b)
+                    elif len(b) == 4:
+                        _append(_ADV_TYPE_UUID32_COMPLETE, b)
+                    elif len(b) == 16:
+                        _append(_ADV_TYPE_UUID128_COMPLETE, b)
+
+            # See org.bluetooth.characteristic.gap.appearance.xml
+            if appearance:
+                _append(_ADV_TYPE_APPEARANCE, struct.pack("<h", appearance))
+
+            return payload
+
+        print("Creating advertise payload")
+        print(self.name)
+        print("Services")
+        print(self.services)
+        print("Device type")
+        print(device_type)
+        _payload = advertising_payload(
+            name=self.name,
+            services=self.services,
+            appearance=device_type)
         self.ble.gap_advertise(
             100,
-            bytearray('\x02\x01\x02') + bytearray((len(name) + 1, 0x09)) + name,
-            resp_data=bytearray('\x02\x01\x02') + bytearray((len(name) + 1, 0x09)) + name)
+            _payload,
+            resp_data=_payload)

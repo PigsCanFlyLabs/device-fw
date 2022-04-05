@@ -7,5 +7,6 @@ freeze(".",
         "Satelite.py",
         "UARTBluetooth.py",
         "test_utils.py",
+        "display_wrapper.py",
        ),
 )

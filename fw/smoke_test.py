@@ -129,6 +129,9 @@ class FakeBLE():
     def config(self, gap_name=None):
         self.name = gap_name
 
+    def gatts_set_buffer(self, handle, rxbuf, b):
+        return
+
 
 class UARTSmokeTest(unittest.TestCase):
 
@@ -136,5 +139,11 @@ class UARTSmokeTest(unittest.TestCase):
         print("Starting test.")
         f = FakeBLE()
         print(f"Made fake ble {f}")
-        b = UARTBluetooth("test", ble=f)
+        try:
+            b = UARTBluetooth("test", ble=f)
+        except Exception as e:
+            print("meeps :/")
+            print("Error")
+            print(e)
+            raise e
         print(f"Created {b}")

@@ -46,7 +46,7 @@ def find_display():
     if len(i2c.scan()) != 0:
         oled = ssd1306.SSD1306_I2C(128, 64, i2c)
         oled.fill(0)
-        oled.text('PigsCanFlyLabsLLC ProtoTypeDevice starting', 0, 0)
+        oled.text('SpaceBeaver', 0, 0)
         oled.show()
         return oled
     return None
@@ -54,25 +54,33 @@ def find_display():
 
 global s
 global b
+global phone_id
 
 phone_id = None
 
 try:
     with open("phone_id", "r") as p:
-        phone_id = p.readline()
+        phone_id = p.read()
+        print(f"Loaded phone id {phone_id}")
 except Exception as e:
     print(f"Couldnt read phone id {e}")
 
 
 async def set_phone_id(new_phone_id: str):
-    print("Hi!")
     print("Setting phone id.")
+    global phone_id
     phone_id = new_phone_id
-    with open("phone_id", "w") as p:
-        p.write(phone_id)
-        print(f"Set phone id to {phone_id}")
+    try:
+        with open("phone_id", "w") as p:
+            p.write(phone_id)
+            print(f"Set phone id to {phone_id}")
+    except Exception as e:
+        print(f"Error persisting phone id {e}")
+    return new_phone_id
+
 
 async def get_phone_id():
+    global phone_id
     if phone_id is None:
         try:
             with open("phone_id", "r") as p:
@@ -80,7 +88,7 @@ async def get_phone_id():
         except Exception as e:
             print(f"Couldnt read phone id {e}")
     return phone_id
-        
+
 
 async def get_device_id():
     global s
@@ -140,9 +148,9 @@ def client_ready_callback(flag: bool):
 print("Creating bluetooth and satelite.")
 
 try:
-    b = UARTBluetooth("PigsCanFlyLabsLLCProtoType", display, msg_callback=copy_msg_to_sat_modem,
+    b = UARTBluetooth("SpaceBeaver (PCFL LLC)", display, msg_callback=copy_msg_to_sat_modem,
                       client_ready_callback=client_ready_callback, set_phone_id=set_phone_id,
-                      get_device_id=get_device_id)
+                      get_device_id=get_device_id, get_phone_id=get_phone_id)
 except Exception as e:
     print(f"Couldnt create btle {e}")
 
@@ -176,10 +184,10 @@ except Exception as e:
 # See the discussion in https://github.com/micropython/micropython/issues/6415
 async def always_busy():
     while True:
-#        print("Hi..")
-        await uasyncio.sleep(0)
+        await uasyncio.sleep(0.1)
 
-uasyncio.create_task(always_busy())
+
+# uasyncio.create_task(always_busy())
 
 while True:
     try:
