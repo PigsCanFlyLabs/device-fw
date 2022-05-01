@@ -28,7 +28,7 @@ class UARTBluetooth():
                 import ubluetooth
                 self.ble = ubluetooth.BLE()
                 self.lib_type = "ubluetooth"
-            except Exception:
+            except ImportError:
                 from ubluepy import Peripheral
                 self.ble = Peripheral()
                 self.lib_type = "ubluepy"
@@ -220,13 +220,15 @@ class UARTBluetooth():
             self.services = Service(UUID(NUS_UUID))
             self.rx = Characteristic(
                 UUID(RX_UUID),
-                Characteristic.PROP_WRITE | Characteristic.PROP_WRITE_WO_RESP)
+                props=Characteristic.PROP_WRITE | Characteristic.PROP_WRITE_WO_RESP)
             self.tx = Characteristic(
                 UUID(TX_UUID),
-                Characteristic.PROP_READ | Characteristic.PROP_NOTIFY,
+                props=Characteristic.PROP_READ | Characteristic.PROP_NOTIFY,
                 attrs=Characteristic.ATTR_CCCD)
             self.services.addCharacteristic(self.rx)
             self.services.addCharacteristic(self.tx)
+            # We use this to construct the advertising packet.
+            self.service_uuids = [UUID(NUS_UUID), UUID(RX_UUID), UUID(TX_UUID)]
             self.ble.addService(self.services)
 
     def _raw_write(self, raw_data):
@@ -259,7 +261,10 @@ class UARTBluetooth():
         self.send(f"ACK {msgid}")
 
     def stop_advertise(self):
-        self.ble.gap_advertise(None, b'')
+        if self.lib_type == "ubluetooth":
+            self.ble.gap_advertise(None, b'')
+        elif self.lib_type == "ubluepy":
+            self.ble.advertise_stop()
 
     def advertise(self):
         print(f"Advertising {self.name}")
@@ -318,14 +323,18 @@ class UARTBluetooth():
         print(self.services)
         print("Device type")
         print(device_type)
-        _payload = advertising_payload(
-            name=self.name,
-            services=self.services,
-            appearance=device_type)
         if self.lib_type == "ubluetooth":
+            _payload = advertising_payload(
+                name=self.name,
+                services=self.services,
+                appearance=device_type)
             self.ble.gap_advertise(
                 100,
                 _payload,
                 resp_data=_payload)
         elif self.lib_type == "ubluepy":
-            self.ble.advertise(device_name=self.name, services=[self.services], data=_payload)
+            _payload = advertising_payload(
+                name=self.name,
+                services=self.service_uuids,
+                appearance=device_type)
+            self.ble.advertise(device_name=self.name, data=_payload)
