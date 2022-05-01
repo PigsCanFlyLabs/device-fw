@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+# Ignore root manifest file, this is needed for the NRF build
+manifest.py
+tmp-buil/

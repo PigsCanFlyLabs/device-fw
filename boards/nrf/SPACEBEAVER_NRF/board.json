@@ -1,0 +1,15 @@
+{
+    "deploy": [
+        "../deploy.md"
+    ],
+    "docs": "",
+    "features": [],
+    "images": [
+        "dongle_pcba_case.jpg"
+    ],
+    "mcu": "nrf52",
+    "product": "SpaceBeaverTestNRF0",
+    "thumbnail": "",
+    "url": "https://spacebeaver.com",
+    "vendor": "PigsCanFlyLabsLLC"
+}

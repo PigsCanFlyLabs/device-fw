@@ -12,8 +12,11 @@ fi
 pushd "${build_dir}"
 
 if [ ! -d "${venv_dir}" ]; then
-  virtualenv  "${venv_dir}"
+  virtualenv  "${venv_dir}" --python python3.9
 fi
+
+source ${venv_dir}/bin/activate
+pip install -r ${SCRIPT_DIR}/requirements.txt
 
 # Install the esp-idf dev tool chain if needed
 # Note: can not be called from inside a venv
@@ -23,7 +26,10 @@ if ! command -v idf.py &> /dev/null; then
   fi
   pushd esp-idf
   if [ ! -d "~/.espressif" ]; then
+    # ESP dev env can't be installed while inside a venv so deactivate / re-activate
+    deactivate
     (./install.sh &> espidf_install) || (cat espidf_install; exit 1)
+    source ${venv_dir}/bin/activate
   fi
   source ./export.sh
   popd
@@ -71,12 +77,35 @@ pushd "${MP_ROOT}/ports/esp32"
 if [ ! -d "esp-idf" ]; then
   ln -s "${build_dir}/esp-idf" ./esp-idf
 fi
-cp -af "${BOARD_DIR}/"* ./boards || echo "already copied"
+cp -af "${PCF_BOARD_DIR}/esp/"* ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
 # make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
-make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
-make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+
+#make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+#make BOARD=${ESP_BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+
 pwd
 popd
-
+pushd "${MP_ROOT}/ports/nrf"
+cp -af "${PCF_BOARD_DIR}/nrf/"* ./boards || echo "already copied"
+if [ ! -d "drivers/bluetooth/s132_nrf52_"* ]; then
+  ./drivers/bluetooth/download_ble_stack.sh
+fi
+if [ ! -d "arm-toolchain" ]; then
+  mkdir arm-toolchain
+  ARM_TOOLCHAIN_VERSION=${ARM_TOOLCHAIN_VERSION:-$(curl -s https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads | grep -Po '<h3>Version \K.+(?= <span)')}
+  curl -Lo gcc-arm-none-eabi.tar.bz2 "https://developer.arm.com/-/media/Files/downloads/gnu-rm/${ARM_TOOLCHAIN_VERSION}/gcc-arm-none-eabi-${ARM_TOOLCHAIN_VERSION}-x86_64-linux.tar.bz2"
+  tar xf gcc-arm-none-eabi.tar.bz2 --strip-components=1 -C ./arm-toolchain
+fi
+PATH="$PATH:$(pwd)/arm-toolchain"
+make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+make submodules &> submod
+# Include extmod for thing.
+echo '
+include("$(PORT_DIR)/modules/manifest.py")
+freeze("$(MPY_DIR)/tools", ("upip.py", "upip_utarfile.py"))
+freeze("$(MPY_DIR)/drivers/onewire")
+freeze("$(MPY_DIR)/drivers/dht", "dht.py")
+' > ./boards/manifest.py
+make V=1 BOARD=${NRF_BOARD:-SPACEBEAVER_NRF} SD=s140 FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake" MICROPY_VFS=1 MICROPY_VFS_FAT=1 MICROPY_PY_MACHINE_I2C=1 BLUETOOTH_SD=1

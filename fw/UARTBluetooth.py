@@ -15,7 +15,6 @@ class UARTBluetooth():
 
         self.name = name
         if ble is None:
-            import ubluetooth
             try:
                 import mac_setup
                 mac_bits = 1
@@ -24,8 +23,17 @@ class UARTBluetooth():
             except Exception as e:
                 print(help('modules'))
                 print(f"Weird error {e} trying to configure MAC prefix, will use ESP32 prefix")
-            self.ble = ubluetooth.BLE()
+            # NRF and ESP have different libraries
+            try:
+                import ubluetooth
+                self.ble = ubluetooth.BLE()
+                self.lib_type = "ubluetooth"
+            except Exception:
+                from ubluepy import Peripheral
+                self.ble = Peripheral()
+                self.lib_type = "ubluepy"
         else:
+            self.lib_type = "simulated"
             self.ble = ble
         self.stop_advertise()
         self.services = ()
@@ -49,21 +57,31 @@ class UARTBluetooth():
         self._get_device_id_ref = self._get_device_id
         self._msg_handle_ref = self._msg_handle
         # Setup a call-back for ble msgs
-        self.ble.irq(self.ble_irq)
+        if self.lib_type == "ubluetooth":
+            self.ble.irq(self.ble_irq)
+        elif self.lib_type == "ubluepy":
+            def merge_handle(event, handle, data):
+                """Merge the handle into the data to match the ESP32 lib."""
+                self.ble_irq(event, (handle, data))
+            self.ble.setConnectionHandler(merge_handle)
         if ble is None:
             self.register()
         self.advertise()
 
     def enable(self):
-        self.ble.config(gap_name=self.name)
-        self.ble.active(True)
-        print(f"BLE MAC address is {self.ble.config('mac')}")
-        self.ble.config(gap_name=self.name)
+        if self.lib_type == "ubluetooth":
+            self.ble.config(gap_name=self.name)
+            self.ble.active(True)
+            print(f"BLE MAC address is {self.ble.config('mac')}")
+            self.ble.config(gap_name=self.name)
 
     def disable(self):
-        self.ble.config(gap_name=self.name)
-        self.ble.active(False)
-        self.ble.config(gap_name=self.name)
+        if self.lib_type == "ubluetooth":
+            self.ble.config(gap_name=self.name)
+            self.ble.active(False)
+            self.ble.config(gap_name=self.name)
+        elif self.lib_type == "ubluepy":
+            self.ble.advertise_stop()
 
     def ble_irq(self, event: int, data):
         """Handle BlueTooth Event."""
@@ -181,31 +199,50 @@ class UARTBluetooth():
     def register(self):
         """Register nordic UART service."""
 
-        import ubluetooth
         # Nordic UART Service (NUS)
         NUS_UUID = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'
         RX_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'
         TX_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'
 
-        BLE_NUS = ubluetooth.UUID(NUS_UUID)
-        BLE_RX = (ubluetooth.UUID(RX_UUID), ubluetooth.FLAG_WRITE)
-        BLE_TX = (ubluetooth.UUID(TX_UUID), ubluetooth.FLAG_NOTIFY)
+        if self.lib_type == "ubluetooth":
+            import ubluetooth
+            BLE_NUS = ubluetooth.UUID(NUS_UUID)
+            BLE_RX = (ubluetooth.UUID(RX_UUID), ubluetooth.FLAG_WRITE)
+            BLE_TX = (ubluetooth.UUID(TX_UUID), ubluetooth.FLAG_NOTIFY)
+            BLE_UART = (BLE_NUS, (BLE_TX, BLE_RX,))
+            SERVICES = (BLE_UART, )
+            self.services = SERVICES
+            ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
+            rxbuf = 500
+            self.ble.gatts_set_buffer(self.rx, rxbuf, True)
+        elif self.lib_type == "ubluepy":
+            from ubluepy import Characteristic, Service, UUID
+            self.services = Service(UUID(NUS_UUID))
+            self.rx = Characteristic(
+                UUID(RX_UUID),
+                Characteristic.PROP_WRITE | Characteristic.PROP_WRITE_WO_RESP)
+            self.tx = Characteristic(
+                UUID(TX_UUID),
+                Characteristic.PROP_READ | Characteristic.PROP_NOTIFY,
+                attrs=Characteristic.ATTR_CCCD)
+            self.services.addCharacteristic(self.rx)
+            self.services.addCharacteristic(self.tx)
+            self.ble.addService(self.services)
 
-        BLE_UART = (BLE_NUS, (BLE_TX, BLE_RX,))
-        SERVICES = (BLE_UART, )
-        self.services = SERVICES
-        ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
-        rxbuf = 500
-        self.ble.gatts_set_buffer(self.rx, rxbuf, True)
+    def _raw_write(self, raw_data):
+        if self.lib_type == "ubluetooth":
+            self.ble.gatts_notify(self.conn_handle, self.tx, raw_data)
+        else:
+            self.tx.write(raw_data)
 
     def send(self, data):
         print(f"Preparing to send {data} to UART BTLE.")
         # Send how many bytes were going to have, we always use 4 bytes to send this.
-        self.ble.gatts_notify(self.conn_handle, self.tx, int.to_bytes(len(data), 4, 'little'))
+        self._raw_write(int.to_bytes(len(data), 4, 'little'))
         # Send all of the bytes
         idx = 0
         while (idx < len(data)):
-            self.ble.gatts_notify(self.conn_handle, self.tx, data[idx:idx + self.mtu])
+            self._raw_write(data[idx:idx + self.mtu])
             idx = idx + self.mtu
 
     def send_msg(self, app_id: str, msg: str):
@@ -285,7 +322,10 @@ class UARTBluetooth():
             name=self.name,
             services=self.services,
             appearance=device_type)
-        self.ble.gap_advertise(
-            100,
-            _payload,
-            resp_data=_payload)
+        if self.lib_type == "ubluetooth":
+            self.ble.gap_advertise(
+                100,
+                _payload,
+                resp_data=_payload)
+        elif self.lib_type == "ubluepy":
+            self.ble.advertise(device_name=self.name, services=[self.services], data=_payload)
