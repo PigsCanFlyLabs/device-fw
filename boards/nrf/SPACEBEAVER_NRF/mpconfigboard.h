@@ -70,8 +70,6 @@
 
 #define HELP_TEXT_BOARD_LED          "1,2,3"
 
-#define MICROPY_PY_BLUETOOTH_DEFAULT_GAP_NAME ("SpaceBeaver")
-
 // Native libraries we use
 #define MICROPY_PY_USELECT          (1)
 #define MICROPY_PY_UASYNCIO             (1)

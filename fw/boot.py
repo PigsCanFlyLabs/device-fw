@@ -168,25 +168,18 @@ conn = FakeUART(lines=[
     "$M138 DATETIME*35",
     "$MM 120,1337DEADBEEF,1,1*39"])
 
-try:
-    s = Satelite(1,
-                 # Testing hack
-                 myconn=conn,
-                 new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
-                 error_callback=copy_error_to_ble, txing_callback=txing_callback,
-                 done_txing_callback=done_txing_callback, ready_callback=modem_ready,
-                 client_ready=client_ready)
-except Exception as e:
-    print(f"Couldnt create satelite UART {e}")
-
+s = Satelite(1,
+             # Testing hack
+             myconn=conn,
+             new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
+             error_callback=copy_error_to_ble, txing_callback=txing_callback,
+             done_txing_callback=done_txing_callback, ready_callback=modem_ready,
+             client_ready=client_ready)
 
 print("Hi!")
 print("Running!")
 
-try:
-    s.start()
-except Exception as e:
-    print(f"Couldnt start satelite comm {e}")
+s.start()
 
 
 # See the discussion in https://github.com/micropython/micropython/issues/6415
@@ -195,15 +188,28 @@ async def always_busy():
         await uasyncio.sleep(0.1)
 
 
-# uasyncio.create_task(always_busy())
+uasyncio.create_task(always_busy())
 
-while True:
-    try:
-        print("Starting event loop...")
-        event_loop = uasyncio.get_event_loop()
-        event_loop.run_forever()
-        print("Event loop complete?")
-        import time
-        time.sleep(5)
-    except Exception as e:
-        print(f"Error {e} running event loop.")
+try:
+    event_loop = uasyncio.get_event_loop()
+    import time
+    time.sleep_ms(900)
+    print("K....")
+    event_loop.run_forever()
+except Exception as e:
+    print(f"Error {e} running event loop.")
+# raise Exception("mmmk satelite started")
+#
+#
+# while True:
+#    try:
+#        print("Starting event loop...")
+#        event_loop = uasyncio.get_event_loop()
+#        event_loop.run_forever()
+#        print("Event loop complete?")
+#        import time
+#        time.sleep_ms(100)
+#    except Exception as e:
+#        print(f"Error {e} running event loop.")
+
+# raise Exception("kkkkkkkk")

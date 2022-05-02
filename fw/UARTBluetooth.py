@@ -86,8 +86,6 @@ class UARTBluetooth():
     def ble_irq(self, event: int, data):
         """Handle BlueTooth Event."""
         print(f"Handling {event} {data}")
-        print(f"DEBUG: Current event loop task is {uasyncio.current_task()}")
-        print(f"DEBUG: state: {uasyncio.current_task().state}")
         print(str(event))
         print(str(data))
         # Handle bluetooth events
@@ -228,7 +226,7 @@ class UARTBluetooth():
             self.services.addCharacteristic(self.rx)
             self.services.addCharacteristic(self.tx)
             # We use this to construct the advertising packet.
-            self.service_uuids = [UUID(NUS_UUID), UUID(RX_UUID), UUID(TX_UUID)]
+            self.service_uuids = [UUID(NUS_UUID)]
             self.ble.addService(self.services)
 
     def _raw_write(self, raw_data):
@@ -265,6 +263,12 @@ class UARTBluetooth():
             self.ble.gap_advertise(None, b'')
         elif self.lib_type == "ubluepy":
             self.ble.advertise_stop()
+
+    def uuid_to_bytes(self, uuid):
+        if self.lib_type == "ubluetooth":
+            return bytes(uuid)
+        elif self.lib_type == "ubluepy":
+            return bin(uuid.binVal())
 
     def advertise(self):
         print(f"Advertising {self.name}")
@@ -303,7 +307,7 @@ class UARTBluetooth():
                 for uuid in services:
                     print(f"Services {uuid} in {services}")
                     # Return here and fix the cast issue.
-                    b = bytes(uuid)
+                    b = self.uuid_to_bytes(uuid)
                     if len(b) == 2:
                         _append(_ADV_TYPE_UUID16_COMPLETE, b)
                     elif len(b) == 4:
@@ -333,8 +337,15 @@ class UARTBluetooth():
                 _payload,
                 resp_data=_payload)
         elif self.lib_type == "ubluepy":
+            self.ble.disconnect()
+            import time
+            self.ble.advertise_stop()
+            # We need to sleep otherwise we get an 0x08 error trying to start advertising
+            time.sleep_ms(1000)
             _payload = advertising_payload(
                 name=self.name,
                 services=self.service_uuids,
                 appearance=device_type)
-            self.ble.advertise(device_name=self.name, data=_payload)
+            self.ble.advertise(data=_payload)
+            # This gets us 0x09
+            # self.ble.advertise(device_name=self.name, services=[self.services])
