@@ -7,6 +7,9 @@ _BMS_MTU = 128
 
 class UARTBluetooth():
 
+    _ubluetooth = "ubluetooth"
+    _ubluepy = "ubluepy"
+
     def __init__(self, name: str, display=None, msg_callback=None, ble=None,
                  client_ready_callback=None, set_phone_id=None,
                  get_phone_id=None,
@@ -27,11 +30,11 @@ class UARTBluetooth():
             try:
                 import ubluetooth
                 self.ble = ubluetooth.BLE()
-                self.lib_type = "ubluetooth"
+                self.lib_type = self._ubluetooth
             except ImportError:
                 from ubluepy import Peripheral
                 self.ble = Peripheral()
-                self.lib_type = "ubluepy"
+                self.lib_type = self._ubluepy
         else:
             self.lib_type = "simulated"
             self.ble = ble
@@ -57,9 +60,9 @@ class UARTBluetooth():
         self._get_device_id_ref = self._get_device_id
         self._msg_handle_ref = self._msg_handle
         # Setup a call-back for ble msgs
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             self.ble.irq(self.ble_irq)
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             def merge_handle(event, handle, data):
                 """Merge the handle into the data to match the ESP32 lib."""
                 self.ble_irq(event, (handle, data))
@@ -69,18 +72,18 @@ class UARTBluetooth():
         self.advertise()
 
     def enable(self):
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             self.ble.config(gap_name=self.name)
             self.ble.active(True)
             print(f"BLE MAC address is {self.ble.config('mac')}")
             self.ble.config(gap_name=self.name)
 
     def disable(self):
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             self.ble.config(gap_name=self.name)
             self.ble.active(False)
             self.ble.config(gap_name=self.name)
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             self.ble.advertise_stop()
 
     def ble_irq(self, event: int, data):
@@ -202,7 +205,7 @@ class UARTBluetooth():
         RX_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'
         TX_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'
 
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             import ubluetooth
             BLE_NUS = ubluetooth.UUID(NUS_UUID)
             BLE_RX = (ubluetooth.UUID(RX_UUID), ubluetooth.FLAG_WRITE)
@@ -213,7 +216,7 @@ class UARTBluetooth():
             ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
             rxbuf = 500
             self.ble.gatts_set_buffer(self.rx, rxbuf, True)
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             from ubluepy import Characteristic, Service, UUID
             self.services = Service(UUID(NUS_UUID))
             self.rx = Characteristic(
@@ -230,7 +233,7 @@ class UARTBluetooth():
             self.ble.addService(self.services)
 
     def _raw_write(self, raw_data):
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             self.ble.gatts_notify(self.conn_handle, self.tx, raw_data)
         else:
             self.tx.write(raw_data)
@@ -259,15 +262,15 @@ class UARTBluetooth():
         self.send(f"ACK {msgid}")
 
     def stop_advertise(self):
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             self.ble.gap_advertise(None, b'')
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             self.ble.advertise_stop()
 
     def uuid_to_bytes(self, uuid):
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             return bytes(uuid)
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             return bin(uuid.binVal())
 
     def advertise(self):
@@ -327,7 +330,7 @@ class UARTBluetooth():
         print(self.services)
         print("Device type")
         print(device_type)
-        if self.lib_type == "ubluetooth":
+        if self.lib_type == self._ubluetooth:
             _payload = advertising_payload(
                 name=self.name,
                 services=self.services,
@@ -336,7 +339,7 @@ class UARTBluetooth():
                 100,
                 _payload,
                 resp_data=_payload)
-        elif self.lib_type == "ubluepy":
+        elif self.lib_type == self._ubluepy:
             self.ble.disconnect()
             import time
             self.ble.advertise_stop()
