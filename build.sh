@@ -79,11 +79,8 @@ if [ ! -d "esp-idf" ]; then
 fi
 cp -af "${PCF_BOARD_DIR}/esp/"* ./boards || echo "already copied"
 make submodules &> submod
-# make BOARD=GENERIC &> base
-# make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
-
-#make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
-#make BOARD=${ESP_BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+make BOARD=${ESP_BOARD:-${BOARD:-SPACEBEAVER_C3}} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
 
 pwd
 popd
