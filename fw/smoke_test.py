@@ -18,16 +18,16 @@ class SateliteSmokeTest(unittest.TestCase):
         s = Satelite(1, myconn=conn)
         self.assertEqual(s.conn, conn)
         self.assertEqual(conn.baudrate, 115200)
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
 
     def test_fake_init_waits(self):
         conn = FakeUART(lines=["butts"])
         s = Satelite(1, myconn=conn, delay=0)
         uasyncio.run(s._modem_ready())
         self.assertEqual(conn.baudrate, 115200)
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
         self.assertEqual(s.ready, False)
 
     def test_fake_modem_ready(self):
@@ -36,8 +36,8 @@ class SateliteSmokeTest(unittest.TestCase):
         s = Satelite(1, myconn=conn, delay=0)
         uasyncio.run(s._modem_ready())
         self.assertEqual(conn.baudrate, 115200)
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
         self.assertEqual(s.ready, False)
         self.assertEqual(s.modem_started, True)
 
@@ -46,18 +46,16 @@ class SateliteSmokeTest(unittest.TestCase):
             "$M138 BOOT,RUNNING*49", "$M138 DATETIME*35"])
         s = Satelite(1, myconn=conn, delay=0)
         self.assertEqual(conn.baudrate, 115200)
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
         uasyncio.run(s._modem_ready())
         self.assertEqual(s.modem_started, True)
         uasyncio.run(s._modem_ready())
-        self.assertEqual(s.transmit_ready, True)
         self.assertEqual(uasyncio.run(s._modem_ready()), True)
         self.assertEqual(conn.baudrate, 115200)
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
         self.assertEqual(s.modem_started, True)
-        self.assertEqual(s.transmit_ready, True)
 
     def test_fake_satelite_fully_ready(self):
         conn = FakeUART(lines=[
@@ -83,12 +81,11 @@ class SateliteSmokeTest(unittest.TestCase):
         print("pandas")
         self.assertEqual(conn.baudrate, 115200)
         print("buad")
-        self.assertEqual(conn.tx, 11)
-        self.assertEqual(conn.rx, 12)
+        self.assertEqual(conn.tx, 26)
+        self.assertEqual(conn.rx, 27)
         print(f"k.... {s.modem_started}")
         self.assertEqual(s.modem_started, True)
         print("k2")
-        self.assertEqual(s.transmit_ready, True)
         print("k3")
 
     def test_read_msg(self):

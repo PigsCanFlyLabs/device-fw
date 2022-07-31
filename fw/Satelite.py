@@ -12,8 +12,8 @@ class Satelite():
                  misc_callback=None,
                  tx_pin=None,
                  rx_pin=None,
-                 uart_tx=11,
-                 uart_rx=12,
+                 uart_tx=26,
+                 uart_rx=27,
                  ready_callback=None,
                  client_ready=None,
                  max_retries=-1,
@@ -33,15 +33,17 @@ class Satelite():
         client_ready is a ThreadSafeFlag of when the client is ready.
         max_retries the number of retries at each level of retrying.
         """
-        print("Constructing connection to M138.")
-        if myconn is None:
-            from machine import UART
-            self.conn = UART(uart_id)
-        else:
-            self.conn = myconn
+        print(f"Constructing connection to M138 w/ uart {uart_id} on {uart_tx} + {uart_rx}")
+        try:
+            if myconn is None:
+                from machine import UART
+                self.conn = UART(uart_id, baudrate=115200, tx=uart_tx, rx=uart_rx)
+            else:
+                self.conn = myconn
+        except Exception as e:
+            print(f"Error creating uart {e}")
         print(f"Using uart {self.conn}")
         self.modem_started = False
-        self.transmit_ready = False
         self.new_msg_callback = new_msg_callback
         self.msg_acked_callback = msg_acked_callback
         self.error_callback = error_callback
@@ -52,10 +54,14 @@ class Satelite():
         self.ready_callback = ready_callback
         self.client_ready = client_ready
         self.device_id = None
+        self.transmit_ready = False
         self.misc_callback = misc_callback
         self.delay = delay
         print("Initilizing UART.")
-        self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
+        try:
+            self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
+        except Exception as e:
+            print(f"Error initializing uart {e}")
         print("Initialized, making stream r/w.")
         if myconn is None:
             self.swriter = uasyncio.StreamWriter(self.conn, {})
@@ -78,8 +84,9 @@ class Satelite():
         print(f"Task created for msg handles - {self.satelite_task}")
 
     async def main_loop(self):
-        print("Waiting for satelite modem to boot.")
+        print("Waiting for satelite modem to boot, plz say hi soon!")
         while not await self._modem_ready():
+            print("Yielding...")
             await uasyncio.sleep(1)
         retries = 0
         print("Sat modem started, entering main loop.")
@@ -128,33 +135,49 @@ class Satelite():
         """Handle messages waiting for system to boot."""
         # Note the developer docs have incorrect checksums for the boot sequence
         # so (for now) we'll support both of them.
-        if self.transmit_ready and self.modem_started:
+        print("Checking modem readiness.")
+        if self.modem_started:
+            print("Modem ready!")
             return True
+        print("Modem not yet ready, checking serial port.")
         raw_message = None
         while raw_message is None:
+            print("Waiting to get a message from modem.")
+            print(f"Current conn {self.conn} reader {self.sreader}")
             try:
-                raw_message = await self.sreader.readline()
+                raw_message = await uasyncio.wait_for(
+                    self.sreader.readline(),
+                    timeout=30.0)
+                if hasattr(raw_message, "decode"):
+                    raw_message = raw_message.decode("UTF-8")
                 print(f"Read line {raw_message}")
+            except uasyncio.TimeoutError:
+                print("Took longer than 30s for modem to boot, query modem.")
+                self.send_command("$CS*10")
             except Exception as e:
                 print(f"Error reading line during modem boot - {e} {self.conn}")
-                import time
-                time.sleep(1)
+                await uasyncio.sleep(1)
         msg = self._validate_msg(raw_message)
         if raw_message == "$M138 BOOT,RUNNING*49":
             print("Modem enabled")
             self.modem_started = True
         elif raw_message == "$M138 DATETIME*35":
             print("t e")
-            self.transmit_ready = True
             return True
         elif msg is not None:
             if msg == "$M138 BOOT,RUNNING":
                 print("Modem enabled")
                 self.modem_started = True
+                return True
             elif msg == "$M138 DATETIME":
                 print("t e")
-                self.transmit_read = True
+                self.modem_started = True
                 return True
+            elif msg.startswith("$CS"):
+                print("Modem provided valid command, missed boot seq.")
+                self.modem_started = True
+                return True
+        print("Nope :/")
         return False
 
     async def _line_handle(self, raw_msg):
@@ -171,7 +194,7 @@ class Satelite():
         if msg == "$M138 BOOT,RUNNING":
             self.modem_started = True
         elif msg == "$M138 DATETIME":
-            self.transmit_read = True
+            self.transmit_ready = True
         elif cmd == "$DT":
             self._update_dt(msg)
         elif cmd == "$RD":
@@ -231,6 +254,10 @@ class Satelite():
 
     def _validate_msg(self, data):
         """Validate a msg matches the checksum."""
+        if hasattr(data, "decode"):
+            data = data.decode('UTF-8')
+        if len(data) > 1 and data[-1] == '\n':
+            data = data[0:-1]
         # Parse the trailing *xx
         if len(data) > 3 and data[-3] == '*':
             cksum = data[-2:]
@@ -251,8 +278,10 @@ class Satelite():
         """
         checksum = self._checksum_formatted(data)
         cmd = f"{data}*{checksum}"
+        print(f"Sending command {cmd}")
         self.swriter.write(cmd)
         await self.swriter.drain()
+        print(f"Sent command {cmd}")
 
     async def del_msg(self, mid: str) -> bool:
         """Delete a message from the modem."""
@@ -334,7 +363,7 @@ class Satelite():
 
     def is_ready(self) -> bool:
         """Returns if the modem is ready for msgs."""
-        return self.transmit_ready
+        return self.modem_ready
 
     async def send_msg(self, app_id, data) -> str:
         """Send a message, returning the message ID.

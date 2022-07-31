@@ -20,6 +20,9 @@ class FakeUART():
         print(f"Serving fake line {line}")
         return line
 
+    def len(self):
+        return len(self.lines)
+
     def write(self, cmd):
         print(f"Sendig fake line {cmd}")
         self.sent_lines.append(cmd)

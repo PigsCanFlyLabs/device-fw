@@ -45,5 +45,5 @@ const mp_obj_module_t mac_setup_cmodule = {
 };
 
 // Register the module to make it available in Python
-MP_REGISTER_MODULE(MP_QSTR_mac_setup, mac_setup_cmodule, 1);
+MP_REGISTER_MODULE(MP_QSTR_mac_setup, mac_setup_cmodule);
 #endif

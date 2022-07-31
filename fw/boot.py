@@ -5,14 +5,17 @@ import machine
 from machine import Pin, SoftI2C
 import ssd1306
 import micropython
-from test_utils import FakeUART
-
-print("Allocating buffer for ISR failure..")
-micropython.alloc_emergency_exception_buf(100)
+import time
+import os
 
 
-print("Finding target machine frequency.")
-default_freq = machine.freq
+go_slow = False
+micropython.alloc_emergency_exception_buf(200)
+print("Allocated buffer for ISR failure.")
+time.sleep(1)
+print("Waiting to allow debugger to attach....")
+time.sleep(1)
+print("Continuing pandas :D")
 
 
 def find_lowest_freq():
@@ -29,13 +32,14 @@ def find_lowest_freq():
     return lowest
 
 
-lowest_freq = find_lowest_freq()
+if go_slow:
+    print("Finding target machine frequency.")
+    default_freq = machine.freq
 
-# Go slow cause YOLO
-machine.freq(lowest_freq)
+    lowest_freq = find_lowest_freq()
 
-# Do stuff
-micropython.alloc_emergency_exception_buf(400)
+    # Go slow cause YOLO
+    machine.freq(lowest_freq)
 
 
 # Try and find a display if one is present
@@ -52,18 +56,26 @@ def find_display():
     return None
 
 
+print("Created globals...")
 global s
 global b
 global phone_id
 
+print("Getting ready to read phone id.")
 phone_id = None
 
 try:
-    with open("phone_id", "r") as p:
-        phone_id = p.read()
-        print(f"Loaded phone id {phone_id}")
+    print("System directories:")
+    print(os.listdir())
+    if "phone_id" in os.listdir():
+        print("Phone id found.")
+        with open("phone_id", "r") as p:
+            phone_id = p.read()
+            print(f"Loaded phone id {phone_id}")
+    else:
+        print("Phone id not yet stored.")
 except Exception as e:
-    print(f"Couldnt read phone id {e}")
+    print(f"Error reading phone id: {e}")
 
 
 async def set_phone_id(new_phone_id: str):
@@ -134,7 +146,8 @@ def modem_ready():
     b.send_ready()
 
 
-display = find_display()
+display = None
+# display = find_display()
 client_ready = uasyncio.ThreadSafeFlag()
 
 
@@ -152,22 +165,19 @@ try:
                       client_ready_callback=client_ready_callback, set_phone_id=set_phone_id,
                       get_device_id=get_device_id, get_phone_id=get_phone_id)
 except Exception as e:
+    print("BTLE error.")
     print(f"Couldnt create btle {e}")
 
-
-conn = FakeUART(lines=[
-    "butts",
-    "$M138 DATETIME*35",
-    "$MM 120,1337DEADBEEF,1,1*39"])
-
+print("Creating satellite connection.")
 try:
-    s = Satelite(1,
+    s = Satelite(uart_id=1,
                  # Testing hack
-                 myconn=conn,
                  new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
                  error_callback=copy_error_to_ble, txing_callback=txing_callback,
                  done_txing_callback=done_txing_callback, ready_callback=modem_ready,
-                 client_ready=client_ready)
+                 client_ready=client_ready,
+                 uart_tx=19,
+                 uart_rx=18)
 except Exception as e:
     print(f"Couldnt create satelite UART {e}")
 
@@ -195,7 +205,6 @@ while True:
         event_loop = uasyncio.get_event_loop()
         event_loop.run_forever()
         print("Event loop complete?")
-        import time
         time.sleep(5)
     except Exception as e:
         print(f"Error {e} running event loop.")

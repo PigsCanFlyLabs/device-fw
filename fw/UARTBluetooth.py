@@ -13,9 +13,10 @@ class UARTBluetooth():
                  get_device_id=None):
         """Initialize the UART BLE handler. For testing allows ble to be supplied."""
 
+        print("Starting UART BLuetooth interface.")
         self.name = name
         if ble is None:
-            import ubluetooth
+            import bluetooth
             try:
                 import mac_setup
                 mac_bits = 1
@@ -24,12 +25,15 @@ class UARTBluetooth():
             except Exception as e:
                 print(help('modules'))
                 print(f"Weird error {e} trying to configure MAC prefix, will use ESP32 prefix")
-            self.ble = ubluetooth.BLE()
+            self.ble = bluetooth.BLE()
         else:
             self.ble = ble
+        print("Stopping advertise.")
         self.stop_advertise()
         self.services = ()
+        self.service_uuids = []
         self.conn_handle = 0
+        print("Enable.")
         self.enable()
         self.connected = False
         self.display = DisplayWrapper(display)
@@ -51,8 +55,11 @@ class UARTBluetooth():
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
         if ble is None:
+            print("Prepairing to register")
             self.register()
+        print("Prepairing to advertise.")
         self.advertise()
+        print("Ok!")
 
     def enable(self):
         self.ble.config(gap_name=self.name)
@@ -181,19 +188,20 @@ class UARTBluetooth():
     def register(self):
         """Register nordic UART service."""
 
-        import ubluetooth
+        import bluetooth
         # Nordic UART Service (NUS)
         NUS_UUID = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E'
         RX_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'
         TX_UUID = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E'
 
-        BLE_NUS = ubluetooth.UUID(NUS_UUID)
-        BLE_RX = (ubluetooth.UUID(RX_UUID), ubluetooth.FLAG_WRITE)
-        BLE_TX = (ubluetooth.UUID(TX_UUID), ubluetooth.FLAG_NOTIFY)
+        BLE_NUS = bluetooth.UUID(NUS_UUID)
+        BLE_RX = (bluetooth.UUID(RX_UUID), bluetooth.FLAG_WRITE)
+        BLE_TX = (bluetooth.UUID(TX_UUID), bluetooth.FLAG_READ | bluetooth.FLAG_NOTIFY)
 
         BLE_UART = (BLE_NUS, (BLE_TX, BLE_RX,))
         SERVICES = (BLE_UART, )
         self.services = SERVICES
+        self.service_uuids = [BLE_NUS]
         ((self.tx, self.rx,), ) = self.ble.gatts_register_services(SERVICES)
         rxbuf = 500
         self.ble.gatts_set_buffer(self.rx, rxbuf, True)
@@ -258,8 +266,9 @@ class UARTBluetooth():
                 _append(_ADV_TYPE_NAME, name)
 
             if services:
+                print("Adding services to advertising payload.")
                 for uuid in services:
-                    print(f"Services {uuid} in {services}")
+                    print(f"Service {uuid} in {services}")
                     # Return here and fix the cast issue.
                     b = bytes(uuid)
                     if len(b) == 2:
@@ -277,15 +286,35 @@ class UARTBluetooth():
 
         print("Creating advertise payload")
         print(self.name)
-        print("Services")
-        print(self.services)
+        print("Service UUIDs:")
+        print(self.service_uuids)
         print("Device type")
         print(device_type)
         _payload = advertising_payload(
             name=self.name,
-            services=self.services,
+            services=self.service_uuids,
             appearance=device_type)
-        self.ble.gap_advertise(
-            100,
-            _payload,
-            resp_data=_payload)
+        try:
+            print("Created payload :)")
+            self.ble.gap_advertise(
+                100,
+                _payload,
+                resp_data=_payload)
+        except Exception as e:
+            print(f"Error using long payload for BTLE {e}")
+            _short_payload = advertising_payload(
+                name=self.name,
+                services=[],
+                appearance=device_type)
+            try:
+                print("Advertising short payload :)")
+                self.ble.gap_advertise(
+                    100,
+                    _short_payload,
+                    resp_data=_payload)
+            except Exception as e:
+                print(f"Error using long resp payload - {e}")
+                self.ble.gap_advertise(
+                    100,
+                    _short_payload,
+                    resp_data=_short_payload)

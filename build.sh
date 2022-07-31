@@ -2,10 +2,8 @@
 
 source common.sh
 
-#MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-v1.18}
-# Needed to use 4.4 -- see https://github.com/micropython/micropython/issues/8277
-MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-master}
-ESP_IDF_VERSION="v4.4"
+MICRO_PYTHON_VERSION=${MICRO_PYTHON_VERSION:-v1.19.1}
+ESP_IDF_VERSION="v4.4.1"
 if [ ! -d "${build_dir}" ]; then
   mkdir "${build_dir}"
 fi
@@ -34,7 +32,7 @@ pushd ./microPython/project
 
 pwd
 if [ ! -d "micropython" ]; then
-  git clone --recurse-submodules https://github.com/micropython/micropython.git &> clone_logs || (cat clone_logs; exit 1)
+  git clone -b "${MICRO_PYTHON_VERSION}" --recurse-submodules https://github.com/micropython/micropython.git &> clone_logs || (cat clone_logs; exit 1)
 fi
 pushd micropython
 MP_ROOT=$(pwd)
@@ -74,8 +72,8 @@ fi
 cp -af "${BOARD_DIR}/"* ./boards || echo "already copied"
 make submodules &> submod
 # make BOARD=GENERIC &> base
-# make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
-make clean USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
+ make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" clean
+make USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake" clean
 make BOARD=${BOARD:-SPACEBEAVER_C3} FROZEN_MANIFEST="${SCRIPT_DIR}/fw/manifest.py" USER_C_MODULES="${SCRIPT_DIR}/modules/micropython.cmake"
 pwd
 popd
