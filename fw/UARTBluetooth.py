@@ -15,6 +15,7 @@ class UARTBluetooth():
 
         print("Starting UART BLuetooth interface.")
         self.name = name
+        self.modem_ready = False
         if ble is None:
             import bluetooth
             try:
@@ -52,6 +53,7 @@ class UARTBluetooth():
         self._get_phone_id_ref = self._get_phone_id
         self._get_device_id_ref = self._get_device_id
         self._msg_handle_ref = self._msg_handle
+        self._send_ready_ref = self.send_ready
         # Setup a call-back for ble msgs
         self.ble.irq(self.ble_irq)
         if ble is None:
@@ -96,6 +98,9 @@ class UARTBluetooth():
                 except Exception as e:
                     print(f"Error negotiating MTU {e}")
 
+            # If the modem is ready, let the client know.
+            if self.modem_ready:
+                micropython.schedule(self._send_ready_ref, [])
             self.client_ready_callback(True)
         elif event == 21:  # _IRQ_MTU_EXCHANGED:
             # ATT MTU exchange complete (either initiated by us or the remote device).
@@ -161,10 +166,13 @@ class UARTBluetooth():
             else:
                 print(f"IDK what to do with {command}")
             print("Done!")
+        except Exception as e:
+            print(f"Error {e} handling {buffer_veiw}.")
         finally:
             self.ready = True
 
     async def _get_phone_id(self):
+        print("Getting phone id.")
         phone_id = await self.get_phone_id()
         print(f"Got phone id {phone_id}")
         if phone_id is None:
@@ -173,7 +181,9 @@ class UARTBluetooth():
             self.send(f"PHONEID: {phone_id}")
 
     async def _get_device_id(self):
-        self.send(f"{await self.get_device_id()}")
+        device_id = await self.get_device_id()
+        print(f"Got device id {device_id}")
+        self.send(f"{device_id}")
 
     async def _msg_handle(self, completed_msg):
         if self.msg_callback is not None:
@@ -207,14 +217,19 @@ class UARTBluetooth():
         self.ble.gatts_set_buffer(self.rx, rxbuf, True)
 
     def send(self, data):
-        print(f"Preparing to send {data} to UART BTLE.")
-        # Send how many bytes were going to have, we always use 4 bytes to send this.
-        self.ble.gatts_notify(self.conn_handle, self.tx, int.to_bytes(len(data), 4, 'little'))
-        # Send all of the bytes
-        idx = 0
-        while (idx < len(data)):
-            self.ble.gatts_notify(self.conn_handle, self.tx, data[idx:idx + self.mtu])
-            idx = idx + self.mtu
+        try:
+            print(f"Preparing to send {data} to UART BTLE.")
+            # Send how many bytes were going to have, we always use 4 bytes to send this.
+            self.ble.gatts_notify(self.conn_handle, self.tx, int.to_bytes(len(data), 4, 'little'))
+            # Send all of the bytes
+            idx = 0
+            while (idx < len(data)):
+                self.ble.gatts_notify(self.conn_handle, self.tx, data[idx:idx + self.mtu])
+                idx = idx + self.mtu
+            print("Done.")
+        except Exception as e:
+            print(f"Failed to send {data} to UART BTLE - {e}")
+            # TODO: Better exception handling?
 
     def send_msg(self, app_id: str, msg: str):
         self.display("Loading msg from satelites")
@@ -223,8 +238,16 @@ class UARTBluetooth():
     def send_error(self, error):
         self.send(f"ERROR {error}")
 
-    def send_ready(self):
-        self.send("READY")
+    # v so that schedule can be called.
+    def send_ready(self, v=None):
+        print("Set modem ready.")
+        self.modem_ready = True
+        try:
+            print("Sending.")
+            self.send("READY")
+            print("Sent.")
+        except Exception as e:
+            print(f"Failed to send {e}")
 
     def send_msg_acked(self, msgid: str):
         self.send(f"ACK {msgid}")

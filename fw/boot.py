@@ -104,7 +104,8 @@ async def get_phone_id():
 
 async def get_device_id():
     global s
-    return s.device_id()
+    print(f"Getting device id on {s}")
+    return await s.device_id()
 
 
 async def copy_msg_to_sat_modem(msg: str) -> str:
@@ -170,6 +171,7 @@ except Exception as e:
 
 print("Creating satellite connection.")
 try:
+    global s
     s = Satelite(uart_id=1,
                  # Testing hack
                  new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
@@ -178,8 +180,10 @@ try:
                  client_ready=client_ready,
                  uart_tx=19,
                  uart_rx=18)
+    print(f"Set sat device to {s}")
 except Exception as e:
     print(f"Couldnt create satelite UART {e}")
+    raise e
 
 
 print("Hi!")

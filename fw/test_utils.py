@@ -27,5 +27,8 @@ class FakeUART():
         print(f"Sendig fake line {cmd}")
         self.sent_lines.append(cmd)
 
+    async def drain(self, *args):
+        return True
+
     async def flush(self):
         return True

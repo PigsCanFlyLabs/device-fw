@@ -34,6 +34,7 @@ class Satelite():
         max_retries the number of retries at each level of retrying.
         """
         print(f"Constructing connection to M138 w/ uart {uart_id} on {uart_tx} + {uart_rx}")
+        self.lock = uasyncio.Lock()
         try:
             if myconn is None:
                 from machine import UART
@@ -48,15 +49,17 @@ class Satelite():
         self.msg_acked_callback = msg_acked_callback
         self.error_callback = error_callback
         self.last_date = None
-        self.lock = uasyncio.Lock()
         self.ready = False
         self.max_retries = max_retries
         self.ready_callback = ready_callback
         self.client_ready = client_ready
-        self.device_id = None
+        self._device_id = None
         self.transmit_ready = False
         self.misc_callback = misc_callback
         self.delay = delay
+        self.tx_pin = tx_pin
+        self.txing_callback = txing_callback
+        self.done_txing_callback = done_txing_callback
         print("Initilizing UART.")
         try:
             self.conn.init(baudrate=115200, tx=uart_tx, rx=uart_rx)
@@ -72,27 +75,34 @@ class Satelite():
         else:
             self.sreader = myconn
         print("Streams set up")
-        if tx_pin is not None and txing_callback is not None:
-            from machine import Pin
-            pin = Pin(tx_pin, Pin.IN, Pin.PULL_UP)
-            pin.irq(trigger=Pin.IRQ_RISING, handler=txing_callback)
-            pin.irq(trigger=Pin.IRQ_FALLING, handler=done_txing_callback)
 
     def start(self):
+        try:
+            if self.tx_pin is not None and self.txing_callback is not None:
+                from machine import Pin
+                pin = Pin(self.tx_pin, Pin.IN, Pin.PULL_UP)
+                pin.irq(trigger=Pin.IRQ_RISING, handler=self.txing_callback)
+                pin.irq(trigger=Pin.IRQ_FALLING, handler=self.done_txing_callback)
+        except Exception as e:
+            print(f"Error {e} trying to register TXING callback.")
+
         print("Seting up satelite msg handler...")
         self.satelite_task = uasyncio.create_task(self.main_loop())
         print(f"Task created for msg handles - {self.satelite_task}")
 
     async def main_loop(self):
         print("Waiting for satelite modem to boot, plz say hi soon!")
-        while not await self._modem_ready():
-            print("Yielding...")
-            await uasyncio.sleep(1)
+        async with self.lock:
+            print("Modem locked until ready.")
+            while not await self._modem_ready():
+                print("Yielding...")
+                await uasyncio.sleep(1)
         retries = 0
         print("Sat modem started, entering main loop.")
         while self.max_retries == -1 or retries < self.max_retries:
             print("Waiting for phone client to become ready...")
-            await self.client_ready.wait()
+            # Temporary: Disable phone check.
+            #  await self.client_ready.wait()
             print("Phone client ready!")
             self.ready = True
             if self.ready_callback is not None:
@@ -147,13 +157,13 @@ class Satelite():
             try:
                 raw_message = await uasyncio.wait_for(
                     self.sreader.readline(),
-                    timeout=30.0)
+                    timeout=60.0)
                 if hasattr(raw_message, "decode"):
                     raw_message = raw_message.decode("UTF-8")
                 print(f"Read line {raw_message}")
             except uasyncio.TimeoutError:
-                print("Took longer than 30s for modem to boot, query modem.")
-                self.send_command("$CS*10")
+                print("Took longer than 60s for modem to boot, query modem.")
+                await self.send_command("$CS*10")
             except Exception as e:
                 print(f"Error reading line during modem boot - {e} {self.conn}")
                 await uasyncio.sleep(1)
@@ -177,6 +187,9 @@ class Satelite():
                 print("Modem provided valid command, missed boot seq.")
                 self.modem_started = True
                 return True
+            elif msg.startswith("M138 BOOT,DEVICEID,DI="):
+                _, id = msg.splti("=")[1]
+                print("Modem almost ready _possible_ device id {id}")
         print("Nope :/")
         return False
 
@@ -220,10 +233,10 @@ class Satelite():
             print(f"Unhandled msg {msg} with no misc callback.")
 
     async def _enable_msg_watch(self):
-        self.send_command("$MM N=E")
+        await self.send_command("$MM N=E")
 
     async def _disable_msg_watch(self):
-        self.send_command("$MM N=D")
+        await self.send_command("$MM N=D")
 
     def _update_rt_time(self, contents):
         """Update the last rt time."""
@@ -286,13 +299,13 @@ class Satelite():
     async def del_msg(self, mid: str) -> bool:
         """Delete a message from the modem."""
         # We don't care about the response so much so just yeet it
-        self.send_command(f"$MM D={mid}")
+        await self.send_command(f"$MM D={mid}")
 
     async def check_for_msgs(self) -> int:
         """Check msgs, returns number of messages."""
         # We care about the response so disable the interrupt handler
         async with self.lock:
-            self.send_command("MM C=U")
+            await self.send_command("MM C=U")
             line = await self.sreader.readline()
             while not line.startswith("$MM") or self._validate_msg(line) is None:
                 print(f"un-expected msg line {line}, creatig task to handle later.")
@@ -313,16 +326,18 @@ class Satelite():
             return self._device_id
         try:
             async with self.lock:
-                self.send_command("CS")
+                await self.send_command("CS")
                 line = await self.sreader.readline()
                 while not line.startswith("$CS"):
+                    print(f"Looping on modem line {line}")
                     uasyncio.create_task(self._line_handle(line))
                     line = await self.sreader.readline()
                     line = self._validate_msg(line)
-                    cmd_data = " ".join(line.split(" ")[1:])
-                    device_id, device_name = cmd_data.split(",")
-                    self._device_id = device_id
-                    return device_id
+                print(f"Desired line {line}")
+                cmd_data = " ".join(line.split(" ")[1:])
+                device_id, device_name = cmd_data.split(",")
+                self._device_id = device_id
+                return device_id
         except Exception as e:
             print(f"Error {e} reading device id trying again.")
             await uasyncio.sleep(5)
@@ -333,7 +348,7 @@ class Satelite():
         async with self.lock:
             if id is None:
                 id = "N"
-            self.send_command(f"$MM R={id}")
+            await self.send_command(f"$MM R={id}")
             line = await self.sreader.readline()
             while not line.startswith("$MM"):
                 print(f"looping {line}")
@@ -372,9 +387,8 @@ class Satelite():
         """
         if not self.ready:
             raise Exception("satelite modem not ready.")
-        try:
-            self.lock.acquire()
-            self.send_command(f"$TD AI={app_id},{data}")
+        async with self.lock:
+            await self.send_command(f"$TD AI={app_id},{data}")
             line = await self.sreader.readline()
             while (not line.startswith("$TD")) and (not line.startswith("$TD SENT")):
                 uasyncio.create_task(self._line_handle(line))
@@ -391,8 +405,6 @@ class Satelite():
                     return ""
             except Exception as e:
                 raise e
-        finally:
-            self.lock.release()
 
     def last_rt_time(self) -> str:
         """Last received test time (from swarm)."""
@@ -402,7 +414,7 @@ class Satelite():
         """Configure RX pin goes hi."""
         try:
             self.lock.acquire()
-            self.send_command("GP 6")
+            uasyncio.create_task(self.send_command("GP 6"))
             line = await self.sreader.readline()
             while (not line.startswith("$GP")):
                 uasyncio.create_task(self._line_handle(line))
