@@ -78,6 +78,7 @@ class Satellite():
 
     def start(self):
         try:
+            # For regulatory reasons only operate one radio at a time.
             if self.tx_pin is not None and self.txing_callback is not None:
                 from machine import Pin
                 pin = Pin(self.tx_pin, Pin.IN, Pin.PULL_UP)
