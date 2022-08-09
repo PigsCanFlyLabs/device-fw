@@ -173,13 +173,13 @@ print("Creating satellite connection.")
 try:
     global s
     s = Satellite(uart_id=1,
-                 # Testing hack
-                 new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
-                 error_callback=copy_error_to_ble, txing_callback=txing_callback,
-                 done_txing_callback=done_txing_callback, ready_callback=modem_ready,
-                 client_ready=client_ready,
-                 uart_tx=19,
-                 uart_rx=18)
+                  # Testing hack
+                  new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
+                  error_callback=copy_error_to_ble, txing_callback=txing_callback,
+                  done_txing_callback=done_txing_callback, ready_callback=modem_ready,
+                  client_ready=client_ready,
+                  uart_tx=19,
+                  uart_rx=18)
     print(f"Set sat device to {s}")
 except Exception as e:
     print(f"Couldnt create satelite UART {e}")
