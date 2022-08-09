@@ -1,5 +1,5 @@
 from UARTBluetooth import UARTBluetooth
-from Satelite import Satelite
+from Satellite import Satellite
 import uasyncio
 import machine
 from machine import Pin, SoftI2C
@@ -172,7 +172,7 @@ except Exception as e:
 print("Creating satellite connection.")
 try:
     global s
-    s = Satelite(uart_id=1,
+    s = Satellite(uart_id=1,
                  # Testing hack
                  new_msg_callback=copy_msg_to_ble, msg_acked_callback=msg_acked,
                  error_callback=copy_error_to_ble, txing_callback=txing_callback,

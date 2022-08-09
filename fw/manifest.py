@@ -4,7 +4,7 @@ freeze("$(MPY_DIR)/drivers/display", "ssd1306.py")
 
 freeze(".",
        ("boot.py",
-        "Satelite.py",
+        "Satellite.py",
         "UARTBluetooth.py",
         "test_utils.py",
         "display_wrapper.py",

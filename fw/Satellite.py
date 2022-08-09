@@ -1,7 +1,7 @@
 import uasyncio
 
 
-class Satelite():
+class Satellite():
 
     def __init__(self, uart_id,
                  new_msg_callback=None,

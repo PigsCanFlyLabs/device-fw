@@ -1,5 +1,5 @@
 import unittest
-from Satelite import Satelite
+from Satellite import Satellite
 from UARTBluetooth import UARTBluetooth
 import uasyncio
 from test_utils import FakeUART
@@ -11,11 +11,11 @@ class TestStringMethods(unittest.TestCase):
         self.assertEqual('foo'.upper(), 'FOO')
 
 
-class SateliteSmokeTest(unittest.TestCase):
+class SatelliteSmokeTest(unittest.TestCase):
 
     def test_fake_start(self):
         conn = FakeUART()
-        s = Satelite(1, myconn=conn)
+        s = Satellite(1, myconn=conn)
         self.assertEqual(s.conn, conn)
         self.assertEqual(conn.baudrate, 115200)
         self.assertEqual(conn.tx, 26)
@@ -23,7 +23,7 @@ class SateliteSmokeTest(unittest.TestCase):
 
     def test_fake_init_waits(self):
         conn = FakeUART(lines=["butts"])
-        s = Satelite(1, myconn=conn, delay=0)
+        s = Satellite(1, myconn=conn, delay=0)
         uasyncio.run(s._modem_ready())
         self.assertEqual(conn.baudrate, 115200)
         self.assertEqual(conn.tx, 26)
@@ -33,7 +33,7 @@ class SateliteSmokeTest(unittest.TestCase):
     def test_fake_modem_ready(self):
         conn = FakeUART(lines=[
             "$M138 BOOT,RUNNING*49"])
-        s = Satelite(1, myconn=conn, delay=0)
+        s = Satellite(1, myconn=conn, delay=0)
         uasyncio.run(s._modem_ready())
         self.assertEqual(conn.baudrate, 115200)
         self.assertEqual(conn.tx, 26)
@@ -44,7 +44,7 @@ class SateliteSmokeTest(unittest.TestCase):
     def test_fake_modem_fully_ready(self):
         conn = FakeUART(lines=[
             "$M138 BOOT,RUNNING*49", "$M138 DATETIME*35"])
-        s = Satelite(1, myconn=conn, delay=0)
+        s = Satellite(1, myconn=conn, delay=0)
         self.assertEqual(conn.baudrate, 115200)
         self.assertEqual(conn.tx, 26)
         self.assertEqual(conn.rx, 27)
@@ -72,7 +72,7 @@ class SateliteSmokeTest(unittest.TestCase):
         print(f"Fake uart {conn}")
         client_ready = uasyncio.ThreadSafeFlag()
         client_ready.set()
-        s = Satelite(1, myconn=conn, delay=0, client_ready=client_ready, max_retries=1)
+        s = Satellite(1, myconn=conn, delay=0, client_ready=client_ready, max_retries=1)
         s.start()
         try:
             uasyncio.get_event_loop().run_until_complete(s.satelite_task)
@@ -93,7 +93,7 @@ class SateliteSmokeTest(unittest.TestCase):
             "butts",
             "$M138 DATETIME*35",
             "$MM 120,1337DEADBEEF,1,1*39"])
-        s = Satelite(1, myconn=conn, delay=0, max_retries=1)
+        s = Satellite(1, myconn=conn, delay=0, max_retries=1)
         app_id, msg_data, msg_id = uasyncio.run(s.read_msg())
         self.assertEqual(app_id, 120)
         self.assertEqual(msg_data, "1337DEADBEEF")
