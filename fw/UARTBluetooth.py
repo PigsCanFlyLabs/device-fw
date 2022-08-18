@@ -45,7 +45,7 @@ class UARTBluetooth():
         self.msg_buffer = bytearray(1000)
         self.mv_msg_buffer = memoryview(self.msg_buffer)
         self.msg_buffer_idx = 0
-        self.ready = True
+        self.ready = False
         self.get_phone_id = get_phone_id
         self.get_device_id = get_device_id
         # We need to avoid allocs in the IRQ
@@ -149,7 +149,9 @@ class UARTBluetooth():
                 self.display.write("Sending msg to modem")
                 # Two bytes for app ID
                 app_id = int.from_bytes(buffer_veiw[1:3], 'little')
+                print(f"App id {app_id}")
                 msg_str = str(buffer_veiw[3:], 'utf8').strip()
+                print(f"Msg is {msg_str}")
                 uasyncio.create_task(self._msg_handle_ref(app_id, msg_str))
             elif command == 'P':
                 self.display.write("Configuring modem profile.")
@@ -158,10 +160,10 @@ class UARTBluetooth():
                 uasyncio.create_task(self.set_phone_id_callback_ref(msg_str))
                 print("Task created :)")
             elif command == 'Q':
-                self.display.write("Fetching phone id")
+                self.display.write("Creating task to fetch phone id")
                 uasyncio.create_task(self._get_phone_id_ref())
             elif command == 'D':
-                self.display.write("Fetching device id")
+                self.display.write("Creating task to fetch device id")
                 uasyncio.create_task(self._get_device_id_ref())
             else:
                 print(f"IDK what to do with {command}")
@@ -185,10 +187,10 @@ class UARTBluetooth():
         print(f"Got device id {device_id}")
         self.send(f"{device_id}")
 
-    async def _msg_handle(self, completed_msg):
+    async def _msg_handle(self, app_id, completed_msg):
         if self.msg_callback is not None:
             try:
-                id = await self.msg_callback(completed_msg)
+                id = await self.msg_callback(app_id, completed_msg)
                 self.send(f"MSGID: {id}")
             except Exception as e:
                 self.send(f"ERROR: sat modem error {e}")

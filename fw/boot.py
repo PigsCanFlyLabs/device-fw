@@ -7,6 +7,8 @@ import ssd1306
 import micropython
 import time
 import os
+import select
+import sys
 
 
 go_slow = False
@@ -108,9 +110,10 @@ async def get_device_id():
     return await s.device_id()
 
 
-async def copy_msg_to_sat_modem(msg: str) -> str:
+async def copy_msg_to_sat_modem(app_id, msg: str) -> str:
     global s
     global phone_id
+    print("Copying message to sat modem.")
     if phone_id is None:
         raise Exception(f"Device {await s.device_id()} not configured")
     app_id, data = msg.split(",")
@@ -195,13 +198,39 @@ except Exception as e:
     print(f"Couldnt start satelite comm {e}")
 
 
+start_magic = "MODEM"
+end_magic = "TIMBITLOVESYOU"
+max_buff = 100
+
+
 # See the discussion in https://github.com/micropython/micropython/issues/6415
 async def always_busy():
+    # poll interface to see if we've got anything from the serial port to handle.
+    poll = select.poll()
+    poll.register(sys.stdin, select.POLLIN)
+    buff = ""
     while True:
-        await uasyncio.sleep(0.1)
+        c = poll.poll(1)
+        print(f"Looping in always busy -- checking for any cmd buffer is {c}")
+        # Pass serial port commands along to the modem iff they have the right magic
+        while len(c) > 0:
+            buff += sys.stdin.read(1)
+            c = poll.poll(1)
+            print(f"stdin buffer: {buff}")
+            if len(buff) > len(start_magic):
+                buff = buff[1:len(start_magic)]
+                print(f"truncated to {buff}")
+            if buff == start_magic:
+                buff = ""
+                async with s.lock:
+                    while not buff.endswith(end_magic):
+                        buff += sys.stdin.read(1)
+                        if len(buff) > max_buff:
+                            s.send_raw(buff[:-len(end_magic)])
+                            buff = buff[-len(end_magic):]
+        await uasyncio.sleep(10)
 
-
-# uasyncio.create_task(always_busy())
+uasyncio.create_task(always_busy())
 
 while True:
     try:

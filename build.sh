@@ -62,7 +62,7 @@ if [ ! -d ~/.micropython/lib/ ]; then
 fi
 # Run some smoke tests
 pushd "${FW_DIR}"
-flake8 --max-line-length 100 --ignore=Q000 --exclude=manifest.py
+flake8 --max-line-length 100 --ignore=Q000 --ignore=W504 --exclude=manifest.py
 micropython -c "import unittest;unittest.main('smoke_test')"
 popd
 pushd "${MP_ROOT}/ports/esp32"

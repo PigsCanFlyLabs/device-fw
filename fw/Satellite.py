@@ -54,6 +54,7 @@ class Satellite():
         self.ready_callback = ready_callback
         self.client_ready = client_ready
         self._device_id = None
+        self._prob_device_id = None
         self.transmit_ready = False
         self.misc_callback = misc_callback
         self.delay = delay
@@ -103,7 +104,7 @@ class Satellite():
         while self.max_retries == -1 or retries < self.max_retries:
             print("Waiting for phone client to become ready...")
             # Temporary: Disable phone check.
-            #  await self.client_ready.wait()
+            await self.client_ready.wait()
             print("Phone client ready!")
             self.ready = True
             if self.ready_callback is not None:
@@ -164,7 +165,7 @@ class Satellite():
                 print(f"Read line {raw_message}")
             except uasyncio.TimeoutError:
                 print("Took longer than 60s for modem to boot, query modem.")
-                await self.send_command("$CS*10")
+                await self.send_command("$CS")
             except Exception as e:
                 print(f"Error reading line during modem boot - {e} {self.conn}")
                 await uasyncio.sleep(1)
@@ -188,20 +189,22 @@ class Satellite():
                 print("Modem provided valid command, missed boot seq.")
                 self.modem_started = True
                 return True
-            elif msg.startswith("M138 BOOT,DEVICEID,DI="):
-                _, id = msg.splti("=")[1]
-                print("Modem almost ready _possible_ device id {id}")
+            elif msg.startswith("$M138 BOOT,DEVICEID,DI="):
+                _, id = msg.split("=")
+                self._prob_device_id = id
+                print(f"Modem almost ready _possible_ device id {id}")
         print("Nope :/")
         return False
 
     async def _line_handle(self, raw_msg):
-        """Handle post boot messages from the M138 modem."""
         msg = self._validate_msg(raw_msg)
-
         if msg is None:
             print(f"Invalid msg {raw_msg}")
             return
+        return await self._line_handle_validated(msg)
 
+    async def _line_handle_validated(self, msg):
+        """Handle post boot messages from the M138 modem."""
         print(f"Valid msg {msg}")
         cmd = msg.split(" ")[0][1:]
         contents = " ".join(msg.split(" ")[1:])
@@ -227,7 +230,7 @@ class Satellite():
                     self.msg_acked_callback(msg_id)
             elif "ERR" in contents:
                 if self.error_callback is not None:
-                    self.error_callback(raw_msg)
+                    self.error_callback(msg)
         elif self.misc_callback is not None:
             self.misc_callback(msg)
         else:
@@ -250,15 +253,16 @@ class Satellite():
         """Compute the checksum for a given message."""
         # Drop the trailing newline
         data.strip()
+        compute_me = data
         # Drop the leading $ if present
-        if len(data) > 1 and data[0] == '$':
-            data = data[1:]
+        if len(compute_me) > 1 and compute_me[0] == '$':
+            compute_me = data[1:]
         # Drop the trailing *xx
-        if len(data) > 3 and data[-3] == '*':
-            data = data[:-3]
+        if len(compute_me) > 3 and compute_me[-3] == '*':
+            compute_me = compute_me[:-3]
         calc_cksum = 0
 
-        for s in data:
+        for s in compute_me:
             calc_cksum ^= ord(s)
         return calc_cksum
 
@@ -286,16 +290,47 @@ class Satellite():
         else:
             return None
 
+    async def send_expect(self, command, expect_prefix, retry=4, timeout=30.0):
+        """
+        Send a command, look for response of type expected_prefix.
+        Retry at most retry times with a timeout of timeout.
+        """
+        print(f"Send expect {command} {expect_prefix}")
+        await self.send_command(command)
+        line = None
+        attempt = 0
+        while ((line is None) or
+               (not line.startswith(expect_prefix))):
+            if line is not None:
+                print(f"un-expected line {line}, creatig task to handle later.")
+                uasyncio.create_task(self._line_handle_validated(line))
+                line = None
+            try:
+                line = await uasyncio.wait_for(
+                    self.sreader.readline(),
+                    timeout=timeout)
+                line = self._validate_msg(line)
+            except Exception as e:
+                print(f"Failed {e} to fetch line in {timeout}")
+                attempt = attempt + 1
+                if attempt > retry:
+                    print("Giving up")
+                    raise e
+        return line
+
+    async def send_raw(self, data):
+        self.swriter.write(data)
+
     async def send_command(self, data):
         """Send a command to the modem. Calculates the checksum.
         Caller should hold the lock otherwise bad things may happen.
         """
+        print(f"Asked to send {data}")
         checksum = self._checksum_formatted(data)
-        cmd = f"{data}*{checksum}"
-        print(f"Sending command {cmd}")
+        cmd = f"{data}*{checksum}\n"
+        print(f"Sending command {cmd} to sat modem.")
         self.swriter.write(cmd)
-        await self.swriter.drain()
-        print(f"Sent command {cmd}")
+        return await self.swriter.drain()
 
     async def del_msg(self, mid: str) -> bool:
         """Delete a message from the modem."""
@@ -306,15 +341,9 @@ class Satellite():
         """Check msgs, returns number of messages."""
         # We care about the response so disable the interrupt handler
         async with self.lock:
-            await self.send_command("MM C=U")
-            line = await self.sreader.readline()
-            while not line.startswith("$MM") or self._validate_msg(line) is None:
-                print(f"un-expected msg line {line}, creatig task to handle later.")
-                uasyncio.create_task(self._line_handle(line))
-                line = await self.sreader.readline()
+            msg = await self.send_expect("$MM C=U", "$MM")
             try:
-                line = self._validate_msg(line)
-                parsed = int(line.split(" ")[1])
+                parsed = int(msg.split(" ")[1])
                 print(f"We have {parsed} messages.")
                 return parsed
             except Exception as e:
@@ -327,36 +356,31 @@ class Satellite():
             return self._device_id
         try:
             async with self.lock:
-                await self.send_command("CS")
-                line = await self.sreader.readline()
-                while not line.startswith("$CS"):
-                    print(f"Looping on modem line {line}")
-                    uasyncio.create_task(self._line_handle(line))
-                    line = await self.sreader.readline()
-                    line = self._validate_msg(line)
-                print(f"Desired line {line}")
+                await uasyncio.sleep(1)
+                await self.send_command("$FV")
+                await uasyncio.sleep(1)
+                line = await self.send_expect("$CS", "$CS")
                 cmd_data = " ".join(line.split(" ")[1:])
-                device_id, device_name = cmd_data.split(",")
+                raw_device_id, device_name = cmd_data.split(",")
+                _, device_id = raw_device_id.split("=")
                 self._device_id = device_id
                 return device_id
         except Exception as e:
-            print(f"Error {e} reading device id trying again.")
-            await uasyncio.sleep(5)
-            return await self.device_id()
+            print(f"Error {e} reading device id, using probable device")
+            self._device_id = self._prob_device_id
+            return self._device_id
 
     async def read_msg(self, id=None) -> tuple[str, str, str]:
         """Read either a specific msg id or the most recent msg."""
+        print("read_msg called")
         async with self.lock:
+            print("lock acquited.")
             if id is None:
                 id = "N"
-            await self.send_command(f"$MM R={id}")
-            line = await self.sreader.readline()
-            while not line.startswith("$MM"):
-                print(f"looping {line}")
-                uasyncio.create_task(self._line_handle(line))
-                line = await self.sreader.readline()
+            line = await self.send_expect(
+                command=f"$MM R={id}",
+                expect_prefix="$MM")
             try:
-                line = self._validate_msg(line)
                 cmd_data = " ".join(line.split(" ")[1:])
                 app_id, msg_data, msg_id, es = cmd_data.split(",")
                 app_id = int(app_id)
@@ -389,13 +413,8 @@ class Satellite():
         if not self.ready:
             raise Exception("satelite modem not ready.")
         async with self.lock:
-            await self.send_command(f"$TD AI={app_id},{data}")
-            line = await self.sreader.readline()
-            while (not line.startswith("$TD")) and (not line.startswith("$TD SENT")):
-                uasyncio.create_task(self._line_handle(line))
-                line = await self.sreader.readline()
+            line = self.send_expect(f"$TD AI={app_id},{data}", "$TD")
             try:
-                line = self._validate_msg(line)
                 cmd_data = " ".join(line.split(" ")[1:])
                 if cmd_data.startswith("OK"):
                     status, msg_id = cmd_data.split(",")
